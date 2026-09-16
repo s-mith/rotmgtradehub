@@ -2,7 +2,7 @@
   "name": "rotmgtradehub",
   "version": "0.1.0",
   "private": true,
-  "description": "The rotmgtrade hub: accounts, node registry, version feed, ban telemetry. No bots, no items, no credentials.",
+  "description": "The rotmgtrade hub: accounts, node registry, version feed, ban telemetry. No bots, no items, no credentials, no money.",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/main.ts",
@@ -26,5 +26,6 @@
   "allowScripts": {
     "better-sqlite3@13.0.1": true,
     "esbuild": true
-  }
+  },
+  "license": "MIT"
 }
