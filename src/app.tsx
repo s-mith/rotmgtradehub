@@ -2,10 +2,11 @@
 // website for people. No bots, no items, no game credentials anywhere here.
 import { Hono } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
-import type { HeartbeatRequest, LinkRequest, VersionInfo } from "rotmgtrade/shared/hubWire";
+import type { AcceptOfferRequest, CreateOfferRequest, HeartbeatRequest, LinkRequest, VersionInfo } from "rotmgtrade/shared/hubWire";
 import { authenticate, createSession, deleteSession, isAdmin, register, userFromSession, type User } from "./auth";
 import { getSettings, setSettings, type Db } from "./db";
 import { linkNode, nodesOf, parseJson, recordHeartbeat, signedByNode, unlinkNode } from "./nodes";
+import { abortRendezvous, acceptOffer, cancelOffer, createOffer, listMine, listOpen, operatorView, rendezvousFor, submitReceipt, unfreezeNode } from "./offers";
 import { acceptReports, summarize } from "./telemetry";
 import { Layout, Home, Me, Admin } from "./pages";
 import { rateLimit } from "./ratelimit";
@@ -52,6 +53,50 @@ export function createApp(db: Db): Hono {
     if (!body) return c.json({ error: "bad json" }, 400);
     return c.json({ ok: true, accepted: acceptReports(db, c.get("node").id, body.reports) });
   });
+  // Phase 3: the offer board and rendezvous (docs/hub-protocol.md).
+  const idParam = (c: { req: { param(k: "id"): string } }): number | null => {
+    const n = Number(c.req.param("id"));
+    return Number.isInteger(n) && n > 0 ? n : null;
+  };
+  signed.get("/offers", (c) => c.json(listOpen(db, c.get("node"))));
+  signed.get("/offers/mine", (c) => c.json(listMine(db, c.get("node"))));
+  signed.post("/offers", (c) => {
+    const body = parseJson<CreateOfferRequest>(c);
+    if (!body) return c.json({ error: "bad json" }, 400);
+    const r = createOffer(db, c.get("node"), body);
+    return r.ok ? c.json({ offer: r.offer }) : c.json({ error: r.error }, r.status);
+  });
+  signed.delete("/offers/:id", (c) => {
+    const id = idParam(c);
+    if (id === null) return c.json({ error: "bad id" }, 400);
+    const r = cancelOffer(db, c.get("node"), id);
+    return r.ok ? c.json({ ok: true }) : c.json({ error: r.error }, r.status);
+  });
+  signed.post("/offers/:id/accept", (c) => {
+    const id = idParam(c);
+    if (id === null) return c.json({ error: "bad id" }, 400);
+    const body = parseJson<AcceptOfferRequest>(c);
+    if (!body) return c.json({ error: "bad json" }, 400);
+    const r = acceptOffer(db, c.get("node"), id, body);
+    return r.ok ? c.json({ rendezvous: r.rendezvous }) : c.json({ error: r.error }, r.status);
+  });
+  signed.get("/rendezvous/mine", (c) => c.json({ rendezvous: rendezvousFor(db, c.get("node")) }));
+  signed.post("/rendezvous/:id/receipt", (c) => {
+    const id = idParam(c);
+    if (id === null) return c.json({ error: "bad id" }, 400);
+    const body = parseJson<unknown>(c);
+    if (!body) return c.json({ error: "bad json" }, 400);
+    const r = submitReceipt(db, c.get("node"), id, body);
+    return r.ok ? c.json({ ok: true, state: r.state }) : c.json({ error: r.error }, r.status);
+  });
+  signed.post("/rendezvous/:id/abort", (c) => {
+    const id = idParam(c);
+    if (id === null) return c.json({ error: "bad id" }, 400);
+    const body = parseJson<{ reason?: unknown }>(c);
+    if (!body) return c.json({ error: "bad json" }, 400);
+    const r = abortRendezvous(db, c.get("node"), id, body.reason);
+    return r.ok ? c.json({ ok: true, state: r.state }) : c.json({ error: r.error }, r.status);
+  });
   app.route("/api/v1", signed);
   app.all("/api/*", (c) => c.json({ error: "not found" }, 404));
 
@@ -96,7 +141,13 @@ export function createApp(db: Db): Hono {
   app.get("/admin", (c) => {
     const user = me(c);
     if (!isAdmin(user)) return c.text("not for you", 403);
-    return c.html(<Layout title="admin"><Admin settings={getSettings(db)} bans={summarize(db)} nodes={(db.prepare("SELECT COUNT(*) AS n FROM nodes").get() as { n: number }).n} /></Layout>);
+    return c.html(<Layout title="admin"><Admin settings={getSettings(db)} bans={summarize(db)} nodes={(db.prepare("SELECT COUNT(*) AS n FROM nodes").get() as { n: number }).n} board={operatorView(db)} /></Layout>);
+  });
+  app.post("/admin/nodes/:id/unfreeze", (c) => {
+    const user = me(c);
+    if (!isAdmin(user)) return c.text("not for you", 403);
+    unfreezeNode(db, c.req.param("id"));
+    return c.redirect("/admin");
   });
   app.post("/admin/settings", async (c) => {
     const user = me(c);

@@ -4,6 +4,7 @@ import type { FC, PropsWithChildren } from "hono/jsx";
 import type { User } from "./auth";
 import type { HubSettings } from "./db";
 import type { NodeRow } from "./nodes";
+import type { operatorView } from "./offers";
 import type { BanSummary } from "./telemetry";
 
 const CSS = `
@@ -88,7 +89,7 @@ export const Me: FC<{ user: User; nodes: (NodeRow & { bots: number; online: numb
   </>
 );
 
-export const Admin: FC<{ settings: HubSettings; bans: BanSummary; nodes: number }> = ({ settings, bans, nodes }) => (
+export const Admin: FC<{ settings: HubSettings; bans: BanSummary; nodes: number; board: ReturnType<typeof operatorView> }> = ({ settings, bans, nodes, board }) => (
   <>
     <p><a href="/me">← my nodes</a></p>
     <h2>Version feed</h2>
@@ -110,6 +111,41 @@ export const Admin: FC<{ settings: HubSettings; bans: BanSummary; nodes: number 
       <table><tbody>{bans.byBuild.map((r) => <tr><td>{r.build || "?"}</td><td>{r.n}</td></tr>)}</tbody></table>
       <b>By day (30d)</b>
       <table><tbody>{bans.byDay.map((r) => <tr><td>{r.day}</td><td>{r.n}</td></tr>)}</tbody></table>
+    </div>
+    <h2>Swaps</h2>
+    <p class="muted">{board.swaps} completed swap{board.swaps === 1 ? "" : "s"} (rendezvous whose two receipts matched).</p>
+    <h2>Disputes</h2>
+    <p class="muted">A rendezvous whose receipts disagree freezes both nodes: no new offers or accepts until you unfreeze them here. Look at both receipts before you do.</p>
+    <div class="panel">
+      <b>Disputed rendezvous</b>
+      {board.disputed.length === 0 ? <p class="muted">none</p> : (
+        <table>
+          <thead><tr><th>#</th><th>offer</th><th>server</th><th>giver</th><th>taker</th><th>reason</th><th>when</th></tr></thead>
+          <tbody>
+            {board.disputed.map((r) => (
+              <tr>
+                <td>{r.id}</td><td>{r.offer_id}</td><td>{r.server}</td>
+                <td>{r.giver_name} <code>{r.giver_bot_ign}</code></td><td>{r.taker_name} <code>{r.taker_bot_ign}</code></td>
+                <td>{r.reason ?? "—"}</td><td>{when(r.closed_at)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <b>Frozen nodes</b>
+      {board.frozen.length === 0 ? <p class="muted">none</p> : (
+        <table>
+          <thead><tr><th>node</th><th>owner</th><th>why</th><th></th></tr></thead>
+          <tbody>
+            {board.frozen.map((n) => (
+              <tr>
+                <td>{n.name} <code>{n.id}</code></td><td>{n.owner}</td><td>{n.frozen_reason ?? "—"}</td>
+                <td><form method="post" action={`/admin/nodes/${n.id}/unfreeze`}><button class="quiet" type="submit">unfreeze</button></form></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   </>
 );

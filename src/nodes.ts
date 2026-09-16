@@ -14,6 +14,11 @@ export interface NodeRow {
   build: string | null;
   linked_at: number;
   last_seen_at: number | null;
+  /** Phase 3: swaps that reached `done`; drives the offer limits. */
+  completed_swaps: number;
+  /** 1 while a disputed rendezvous is unresolved: no new offers or accepts. */
+  frozen: number;
+  frozen_reason: string | null;
 }
 
 export function linkNode(db: Db, req: LinkRequest): { ok: true; nodeId: string; userId: number; displayName: string } | { ok: false; status: number; error: string } {

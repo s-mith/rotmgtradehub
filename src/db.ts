@@ -1,6 +1,8 @@
 // The hub's database. Nothing in here is a game credential or an item: hub
 // user accounts, the nodes linked to them (public keys), what nodes report
-// about themselves, ban telemetry, and the operator's knobs.
+// about themselves, ban telemetry, the operator's knobs, and (phase 3) the
+// offer board: offers, rendezvous, receipts and attestations, all by
+// catalog id and node-local ref, never an item instance.
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
@@ -60,7 +62,68 @@ export function openDb(file = process.env.HUB_DB || path.join(process.env.DATA_D
     );
     CREATE INDEX IF NOT EXISTS ban_reports_time ON ban_reports (suspended_at);
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    -- Phase 3 (docs/hub-protocol.md): offers, rendezvous, receipts, attestations.
+    CREATE TABLE IF NOT EXISTS offers (
+      id INTEGER PRIMARY KEY,
+      node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+      bot_ign TEXT NOT NULL,
+      seasonal INTEGER NOT NULL,
+      server TEXT NOT NULL,
+      give_json TEXT NOT NULL,
+      want_json TEXT NOT NULL,
+      status TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      closed_at INTEGER,
+      taker_node_id TEXT REFERENCES nodes(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS offers_status ON offers (status, created_at);
+    CREATE TABLE IF NOT EXISTS rendezvous (
+      id INTEGER PRIMARY KEY,
+      offer_id INTEGER NOT NULL REFERENCES offers(id) ON DELETE CASCADE,
+      server TEXT NOT NULL,
+      seasonal INTEGER NOT NULL,
+      state TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      deadline_at INTEGER NOT NULL,
+      giver_node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+      giver_bot_ign TEXT NOT NULL,
+      giver_gives_json TEXT NOT NULL,
+      taker_node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+      taker_bot_ign TEXT NOT NULL,
+      taker_gives_json TEXT NOT NULL,
+      closed_at INTEGER,
+      reason TEXT
+    );
+    CREATE INDEX IF NOT EXISTS rendezvous_state ON rendezvous (state, deadline_at);
+    CREATE TABLE IF NOT EXISTS receipts (
+      id INTEGER PRIMARY KEY,
+      rendezvous_id INTEGER NOT NULL REFERENCES rendezvous(id) ON DELETE CASCADE,
+      node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+      window INTEGER NOT NULL,
+      ok INTEGER NOT NULL,
+      gave_json TEXT NOT NULL,
+      gave_refs_json TEXT NOT NULL,
+      got_json TEXT NOT NULL,
+      partner_ign TEXT NOT NULL,
+      error TEXT,
+      at INTEGER NOT NULL,
+      UNIQUE (rendezvous_id, node_id, window)
+    );
+    CREATE TABLE IF NOT EXISTS attestations (
+      node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+      bot_ign TEXT NOT NULL,
+      by_node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+      at INTEGER NOT NULL,
+      UNIQUE (node_id, bot_ign, by_node_id)
+    );
   `);
+  // Columns added after v0: guard with table_info so an existing database upgrades in place.
+  const nodeCols = new Set((db.pragma("table_info(nodes)") as { name: string }[]).map((c) => c.name));
+  if (!nodeCols.has("completed_swaps")) db.exec("ALTER TABLE nodes ADD COLUMN completed_swaps INTEGER NOT NULL DEFAULT 0");
+  if (!nodeCols.has("frozen")) db.exec("ALTER TABLE nodes ADD COLUMN frozen INTEGER NOT NULL DEFAULT 0");
+  if (!nodeCols.has("frozen_reason")) db.exec("ALTER TABLE nodes ADD COLUMN frozen_reason TEXT");
   return db;
 }
 
