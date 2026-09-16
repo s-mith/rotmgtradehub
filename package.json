@@ -1,0 +1,30 @@
+{
+  "name": "rotmgtradehub",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The rotmgtrade hub: accounts, node registry, version feed, ban telemetry. No bots, no items, no credentials.",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.1",
+    "better-sqlite3": "^13.0.1",
+    "hono": "^4.13.5",
+    "rotmgtrade": "file:../rotmgtrade"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.12",
+    "@types/node": "^22.20.1",
+    "tsx": "^4.23.13",
+    "typescript": "5.7.3",
+    "vitest": "^4.1.11"
+  },
+  "allowScripts": {
+    "better-sqlite3@13.0.1": true,
+    "esbuild": true
+  }
+}
