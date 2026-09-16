@@ -8,6 +8,7 @@ import { getSettings, setSettings, type Db } from "./db";
 import { linkNode, nodesOf, parseJson, recordHeartbeat, signedByNode, unlinkNode } from "./nodes";
 import { acceptReports, summarize } from "./telemetry";
 import { Layout, Home, Me, Admin } from "./pages";
+import { rateLimit } from "./ratelimit";
 
 const COOKIE = "hub_session";
 
@@ -20,6 +21,11 @@ export function createApp(db: Db): Hono {
     const v: VersionInfo = { minNodeVersion: s.minNodeVersion, latestNodeVersion: s.latestNodeVersion, downloadUrl: s.downloadUrl, build: { gameVersion: s.gameVersion, knownBuilds: s.knownBuilds, updatedAt: s.buildUpdatedAt } };
     return c.json(v, 200, { "cache-control": "public, max-age=60" });
   });
+
+  // Password-bearing routes: a handful of tries per IP, then wait.
+  app.use("/api/v1/nodes/link", rateLimit("link", 10, 15 * 60_000));
+  app.use("/login", rateLimit("login", 10, 15 * 60_000));
+  app.use("/register", rateLimit("register", 5, 60 * 60_000));
 
   app.post("/api/v1/nodes/link", async (c) => {
     const body = (await c.req.json().catch(() => null)) as LinkRequest | null;

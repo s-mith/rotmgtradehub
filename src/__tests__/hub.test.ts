@@ -4,10 +4,12 @@ import { openDb, setSettings, type Db } from "../db";
 import { createApp } from "../app";
 import { register } from "../auth";
 import { summarize } from "../telemetry";
+import { resetRateLimits } from "../ratelimit";
 
 let db: Db;
 let app: ReturnType<typeof createApp>;
 beforeEach(() => {
+  resetRateLimits();
   db = openDb(":memory:");
   app = createApp(db);
   vi.stubEnv("ADMIN_EMAILS", "boss@x.test");
@@ -88,5 +90,17 @@ describe("hub website", () => {
     const other = await form("/register", { name: "Pleb", email: "pleb@x.test", password: "correct horse battery" });
     expect((await app.request("/admin", { headers: { cookie: other.headers.get("set-cookie")!.split(";")[0] } })).status).toBe(403);
     expect((await app.request("/me")).status).toBe(302);
+  });
+});
+
+describe("rate limits", () => {
+  it("stops a password-guessing burst on link and login", async () => {
+    register(db, "me@x.test", "correct horse battery", "Me");
+    const kp = generateNodeKeypair();
+    let last = 0;
+    for (let i = 0; i < 11; i++) last = (await post("/api/v1/nodes/link", { email: "me@x.test", password: "wrong", publicKey: kp.publicKeyPem, name: "x", version: "0" }, { "x-forwarded-for": "9.9.9.9" })).status;
+    expect(last).toBe(429);
+    // Another address is unaffected.
+    expect((await post("/api/v1/nodes/link", { email: "me@x.test", password: "wrong", publicKey: kp.publicKeyPem, name: "x", version: "0" }, { "x-forwarded-for": "8.8.8.8" })).status).toBe(401);
   });
 });
