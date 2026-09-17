@@ -2,6 +2,9 @@
 // nodes' bots, and the receipts that close them. Pure functions over the db;
 // the routes in app.tsx only translate results to JSON. The hub never sees
 // an item instance: offers carry catalog ids and the poster's own refs.
+// Phase 4b: an offer may be posted or accepted on behalf of a guest of the
+// node (`onBehalfOf`); the guest's name shows as poster, everything else
+// (limits, freezes, attestations) stays the node's.
 import type { AcceptOfferRequest, CreateOfferRequest, NodeLimitsWire, OfferItemWire, OfferStatusWire, OfferWire, ReceiptWire, RendezvousState, RendezvousWire, WantLineWire } from "rotmgtrade/shared/hubWire";
 import type { Db } from "./db";
 import type { NodeRow } from "./nodes";
@@ -10,13 +13,13 @@ export const OFFER_TTL_MS = 14 * 24 * 3600 * 1000;
 export const RENDEZVOUS_MS = 30 * 60 * 1000;
 export const FINISHED_KEEP = 20;
 
-const IGN_RE = /^[A-Za-z]{1,32}$/;
-const SERVER_RE = /^[A-Za-z0-9]{1,24}$/;
-const REF_RE = /^[A-Za-z0-9_-]{1,64}$/;
+export const IGN_RE = /^[A-Za-z]{1,32}$/;
+export const SERVER_RE = /^[A-Za-z0-9]{1,24}$/;
+export const REF_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 export type Refusal = { ok: false; status: 400 | 403 | 404 | 409; error: string };
 export type Result<T> = ({ ok: true } & T) | Refusal;
-const refuse = (status: Refusal["status"], error: string): Refusal => ({ ok: false, status, error });
+export const refuse = (status: Refusal["status"], error: string): Refusal => ({ ok: false, status, error });
 
 // --- rows -------------------------------------------------------------------
 
@@ -34,6 +37,10 @@ export interface OfferRow {
   expires_at: number;
   closed_at: number | null;
   taker_node_id: string | null;
+  /** Phase 4b: the guest of the poster's node this offer is for (null: the owner's own). */
+  for_user_id: number | null;
+  /** Phase 4b: the guest of the taker's node that accepted it. */
+  taker_for_user_id: number | null;
 }
 
 export interface RendezvousRow {
@@ -93,7 +100,7 @@ function activeTakes(db: Db, nodeId: string): number {
 
 // --- validation -------------------------------------------------------------
 
-const isInt = (v: unknown, lo: number, hi: number): v is number => typeof v === "number" && Number.isInteger(v) && v >= lo && v <= hi;
+export const isInt = (v: unknown, lo: number, hi: number): v is number => typeof v === "number" && Number.isInteger(v) && v >= lo && v <= hi;
 
 function parseItems(raw: unknown, max: number, what: string): { items: OfferItemWire[] } | Refusal {
   if (!Array.isArray(raw) || raw.length < 1 || raw.length > max) return refuse(400, `${what}: 1..${max} items`);
@@ -112,7 +119,7 @@ function parseItems(raw: unknown, max: number, what: string): { items: OfferItem
   return { items };
 }
 
-function parseWant(raw: unknown, maxQty: number): { want: WantLineWire[] } | Refusal {
+export function parseWant(raw: unknown, maxQty: number): { want: WantLineWire[] } | Refusal {
   if (!Array.isArray(raw) || raw.length < 1 || raw.length > 8) return refuse(400, "want: 1..8 lines");
   const want: WantLineWire[] = [];
   let total = 0;
@@ -142,16 +149,34 @@ function parseQtys(raw: unknown, what: string): { list: Qty[] } | Refusal {
 
 // --- shaping ----------------------------------------------------------------
 
-function posterOf(db: Db, nodeId: string): string {
+function posterOf(db: Db, nodeId: string, forUserId: number | null = null): string {
+  if (forUserId !== null) {
+    const g = db.prepare("SELECT display_name AS name FROM users WHERE id = ?").get(forUserId) as { name: string } | undefined;
+    if (g) return g.name;
+  }
   const r = db.prepare("SELECT u.display_name AS name FROM nodes n JOIN users u ON u.id = n.user_id WHERE n.id = ?").get(nodeId) as { name: string } | undefined;
   return r?.name ?? "?";
 }
 
-function offerWire(db: Db, o: OfferRow, forNodeId: string, poster = posterOf(db, o.node_id)): OfferWire {
+/** Phase 4b: the grant that lets `userId` trade through `nodeId`, if any. */
+function tradeGrant(db: Db, nodeId: string, userId: number): boolean {
+  return !!db.prepare("SELECT 1 FROM grants WHERE node_id = ? AND user_id = ? AND trade = 1 AND paused = 0").get(nodeId, userId);
+}
+
+/** Resolves `onBehalfOf`: absent → null (the node's owner); otherwise a guest with a live trade grant, else 403. */
+function guestOf(db: Db, node: NodeRow, onBehalfOf: unknown): { userId: number | null } | Refusal {
+  if (onBehalfOf === undefined || onBehalfOf === null) return { userId: null };
+  if (!isInt(onBehalfOf, 1, Number.MAX_SAFE_INTEGER)) return refuse(400, "onBehalfOf must be a user id");
+  if (!tradeGrant(db, node.id, onBehalfOf)) return refuse(403, "no trade grant for that guest on this node");
+  return { userId: onBehalfOf };
+}
+
+function offerWire(db: Db, o: OfferRow, forNodeId: string, poster = posterOf(db, o.node_id, o.for_user_id)): OfferWire {
   return {
     id: o.id,
     poster,
     mine: o.node_id === forNodeId,
+    onBehalfOf: o.for_user_id,
     botIgn: o.bot_ign,
     seasonal: !!o.seasonal,
     server: o.server,
@@ -186,6 +211,8 @@ function rendezvousWire(db: Db, rv: RendezvousRow, nodeId: string): RendezvousWi
   const mine = JSON.parse(giving ? rv.giver_gives_json : rv.taker_gives_json) as OfferItemWire[];
   const theirs = JSON.parse(giving ? rv.taker_gives_json : rv.giver_gives_json) as OfferItemWire[];
   const partnerId = giving ? rv.taker_node_id : rv.giver_node_id;
+  const offer = db.prepare("SELECT for_user_id, taker_for_user_id FROM offers WHERE id = ?").get(rv.offer_id) as { for_user_id: number | null; taker_for_user_id: number | null } | undefined;
+  const partnerGuest = giving ? offer?.taker_for_user_id ?? null : offer?.for_user_id ?? null;
   const reported = db.prepare("SELECT DISTINCT node_id FROM receipts WHERE rendezvous_id = ?").all(rv.id) as { node_id: string }[];
   return {
     id: rv.id,
@@ -196,7 +223,7 @@ function rendezvousWire(db: Db, rv: RendezvousRow, nodeId: string): RendezvousWi
     createdAt: rv.created_at,
     deadlineAt: rv.deadline_at,
     me: { role: giving ? "give" : "take", botIgn: giving ? rv.giver_bot_ign : rv.taker_bot_ign, gives: mine, gets: collapse(theirs) },
-    partner: { botIgn: giving ? rv.taker_bot_ign : rv.giver_bot_ign, poster: posterOf(db, partnerId) },
+    partner: { botIgn: giving ? rv.taker_bot_ign : rv.giver_bot_ign, poster: posterOf(db, partnerId, partnerGuest) },
     reported: { mine: reported.some((r) => r.node_id === nodeId), partner: reported.some((r) => r.node_id === partnerId) },
   };
 }
@@ -207,6 +234,8 @@ export function createOffer(db: Db, node: NodeRow, req: CreateOfferRequest, now 
   if (!req || typeof req !== "object") return refuse(400, "bad json");
   const limits = limitsFor(db, node);
   if (limits.frozen) return refuse(409, "this node is frozen until the operator clears its dispute");
+  const guest = guestOf(db, node, req.onBehalfOf);
+  if ("ok" in guest) return guest;
   if (typeof req.botIgn !== "string" || !IGN_RE.test(req.botIgn)) return refuse(400, "botIgn: letters only, 1..32");
   if (typeof req.seasonal !== "boolean") return refuse(400, "seasonal must be a boolean");
   if (typeof req.server !== "string" || !SERVER_RE.test(req.server)) return refuse(400, "server: letters and digits, 1..24");
@@ -216,8 +245,8 @@ export function createOffer(db: Db, node: NodeRow, req: CreateOfferRequest, now 
   const want = parseWant(req.want, limits.maxItemsPerSide);
   if ("ok" in want) return want;
   if (openOffersOf(db, node.id) >= limits.maxOpenOffers) return refuse(409, `at most ${limits.maxOpenOffers} open offer${limits.maxOpenOffers === 1 ? "" : "s"} until more swaps complete`);
-  const r = db.prepare(`INSERT INTO offers (node_id, bot_ign, seasonal, server, give_json, want_json, status, created_at, updated_at, expires_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)`).run(node.id, req.botIgn, req.seasonal ? 1 : 0, req.server, JSON.stringify(give.items), JSON.stringify(want.want), now, now, now + OFFER_TTL_MS);
+  const r = db.prepare(`INSERT INTO offers (node_id, bot_ign, seasonal, server, give_json, want_json, status, created_at, updated_at, expires_at, for_user_id)
+    VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`).run(node.id, req.botIgn, req.seasonal ? 1 : 0, req.server, JSON.stringify(give.items), JSON.stringify(want.want), now, now, now + OFFER_TTL_MS, guest.userId);
   const row = db.prepare("SELECT * FROM offers WHERE id = ?").get(r.lastInsertRowid) as OfferRow;
   return { ok: true, offer: offerWire(db, row, node.id) };
 }
@@ -225,16 +254,19 @@ export function createOffer(db: Db, node: NodeRow, req: CreateOfferRequest, now 
 /** Every open offer, newest first, minus those of frozen nodes. Also sweeps. */
 export function listOpen(db: Db, forNode: NodeRow, now = Date.now()): { offers: OfferWire[]; limits: NodeLimitsWire } {
   sweepRendezvous(db, now);
-  const rows = db.prepare(`SELECT o.*, u.display_name AS poster FROM offers o JOIN nodes n ON n.id = o.node_id JOIN users u ON u.id = n.user_id
-    WHERE o.status = 'open' AND n.frozen = 0 ORDER BY o.created_at DESC, o.id DESC`).all() as (OfferRow & { poster: string })[];
+  // A guest's offer shows under the guest's name and is hidden while their grant is paused, revoked, or no longer allows trading.
+  const rows = db.prepare(`SELECT o.*, COALESCE(g.display_name, u.display_name) AS poster FROM offers o JOIN nodes n ON n.id = o.node_id JOIN users u ON u.id = n.user_id
+    LEFT JOIN users g ON g.id = o.for_user_id
+    LEFT JOIN grants gr ON gr.node_id = o.node_id AND gr.user_id = o.for_user_id
+    WHERE o.status = 'open' AND n.frozen = 0 AND (o.for_user_id IS NULL OR (gr.id IS NOT NULL AND gr.paused = 0 AND gr.trade = 1))
+    ORDER BY o.created_at DESC, o.id DESC`).all() as (OfferRow & { poster: string })[];
   return { offers: rows.map((o) => offerWire(db, o, forNode.id, o.poster)), limits: limitsFor(db, forNode) };
 }
 
 export function listMine(db: Db, node: NodeRow, now = Date.now()): { offers: OfferWire[]; limits: NodeLimitsWire } {
   sweepRendezvous(db, now);
-  const poster = posterOf(db, node.id);
   const rows = db.prepare("SELECT * FROM offers WHERE node_id = ? ORDER BY created_at DESC, id DESC").all(node.id) as OfferRow[];
-  return { offers: rows.map((o) => offerWire(db, o, node.id, poster)), limits: limitsFor(db, node) };
+  return { offers: rows.map((o) => offerWire(db, o, node.id)), limits: limitsFor(db, node) };
 }
 
 export function cancelOffer(db: Db, node: NodeRow, offerId: number, now = Date.now()): Result<Record<never, never>> {
@@ -250,11 +282,14 @@ export function acceptOffer(db: Db, taker: NodeRow, offerId: number, req: Accept
   const limits = limitsFor(db, taker);
   if (limits.frozen) return refuse(409, "this node is frozen until the operator clears its dispute");
   if (typeof req.botIgn !== "string" || !IGN_RE.test(req.botIgn)) return refuse(400, "botIgn: letters only, 1..32");
+  const guest = guestOf(db, taker, req.onBehalfOf);
+  if ("ok" in guest) return guest;
   const o = db.prepare("SELECT * FROM offers WHERE id = ?").get(offerId) as OfferRow | undefined;
   if (!o) return refuse(404, "no such offer");
   if (o.node_id === taker.id) return refuse(409, "that is your own offer");
   const poster = db.prepare("SELECT frozen FROM nodes WHERE id = ?").get(o.node_id) as { frozen: number } | undefined;
   if (o.status !== "open" || o.expires_at <= now || !poster || poster.frozen) return refuse(409, "offer is no longer open");
+  if (o.for_user_id !== null && !tradeGrant(db, o.node_id, o.for_user_id)) return refuse(409, "offer is no longer open");
   const want = JSON.parse(o.want_json) as WantLineWire[];
   const give = JSON.parse(o.give_json) as OfferItemWire[];
   const expected = want.flatMap((w) => Array.from({ length: w.qty }, () => w.itemId));
@@ -265,7 +300,7 @@ export function acceptOffer(db: Db, taker: NodeRow, offerId: number, req: Accept
   if (items.items.length !== expected.length) return refuse(400, `items: the offer wants ${expected.length} items, got ${items.items.length}`);
   for (let i = 0; i < expected.length; i++) if (items.items[i].itemId !== expected[i]) return refuse(400, `items[${i}]: want line asks for ${expected[i]}, got ${items.items[i].itemId}`);
   const rvId = db.transaction(() => {
-    const u = db.prepare("UPDATE offers SET status = 'accepted', taker_node_id = ?, updated_at = ? WHERE id = ? AND status = 'open'").run(taker.id, now, offerId);
+    const u = db.prepare("UPDATE offers SET status = 'accepted', taker_node_id = ?, taker_for_user_id = ?, updated_at = ? WHERE id = ? AND status = 'open'").run(taker.id, guest.userId, now, offerId);
     if (!u.changes) return null;
     const r = db.prepare(`INSERT INTO rendezvous (offer_id, server, seasonal, state, created_at, deadline_at, giver_node_id, giver_bot_ign, giver_gives_json, taker_node_id, taker_bot_ign, taker_gives_json)
       VALUES (?, ?, ?, 'meet', ?, ?, ?, ?, ?, ?, ?, ?)`).run(offerId, o.server, o.seasonal, now, now + RENDEZVOUS_MS, o.node_id, o.bot_ign, o.give_json, taker.id, req.botIgn, JSON.stringify(items.items));
@@ -295,7 +330,7 @@ function partyOf(db: Db, node: NodeRow, rendezvousId: number): { rv: RendezvousR
 }
 
 function reopenOffer(db: Db, offerId: number, now: number): void {
-  db.prepare("UPDATE offers SET status = 'open', taker_node_id = NULL, updated_at = ? WHERE id = ? AND status = 'accepted'").run(now, offerId);
+  db.prepare("UPDATE offers SET status = 'open', taker_node_id = NULL, taker_for_user_id = NULL, updated_at = ? WHERE id = ? AND status = 'accepted'").run(now, offerId);
 }
 
 function close(db: Db, rv: RendezvousRow, state: RendezvousState, reason: string | null, now: number): void {

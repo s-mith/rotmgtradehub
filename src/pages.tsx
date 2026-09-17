@@ -1,8 +1,10 @@
 // Server-rendered pages. Plain forms, no client script: the hub website is
 // for accounts and nodes; the node's own UI does the heavy lifting.
 import type { FC, PropsWithChildren } from "hono/jsx";
+import type { GuestRequestWire, OfferWire } from "rotmgtrade/shared/hubWire";
 import type { User } from "./auth";
 import type { HubSettings } from "./db";
+import type { GuestVaultView, HalfView } from "./grants";
 import type { NodeRow } from "./nodes";
 import type { operatorView } from "./offers";
 import type { BanSummary } from "./telemetry";
@@ -12,9 +14,10 @@ const CSS = `
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 ui-sans-serif,system-ui,sans-serif}
 main{max-width:760px;margin:0 auto;padding:32px 16px 80px}a{color:var(--accent)}h1{font-size:22px}h2{font-size:16px;margin-top:28px}
 .panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px;margin:12px 0}
-input,button{font:inherit;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:#111;color:var(--text)}
+input,button,select,textarea{font:inherit;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:#111;color:var(--text)}textarea{width:100%;min-height:72px}
 button{background:var(--accent);color:#000;border:0;font-weight:600;cursor:pointer}button.quiet{background:transparent;color:var(--muted);border:1px solid var(--border)}
-.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}.muted{color:var(--muted)}.bad{color:var(--bad)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}.muted{color:var(--muted)}.bad{color:var(--bad)}.good{color:#7cc46c}
+.pick{display:block;padding:4px 0}.pick input{margin-right:8px}
 table{border-collapse:collapse;width:100%}td,th{text-align:left;padding:6px 8px;border-bottom:1px solid var(--border)}code{color:var(--muted)}
 `;
 
@@ -69,6 +72,7 @@ export const Me: FC<{ user: User; nodes: (NodeRow & { bots: number; online: numb
       <form method="post" action="/logout" style="margin-left:auto"><button class="quiet" type="submit">log out</button></form>
       {admin && <a href="/admin">admin</a>}
     </div>
+    <p><a href="/vaults">my vaults on other people's nodes →</a></p>
     <h2>My nodes</h2>
     {nodes.length === 0 ? (
       <p class="muted">No node linked yet. In rotmgtrade, open the node console → Fleet → Node and log in with this account.</p>
@@ -149,3 +153,155 @@ export const Admin: FC<{ settings: HubSettings; bans: BanSummary; nodes: number;
     </div>
   </>
 );
+
+// --- phase 4b: a guest's vaults ---------------------------------------------
+
+const slots = (h: HalfView) => `${h.used}/${h.granted}`;
+
+export const Vaults: FC<{ user: User; vaults: GuestVaultView[] }> = ({ user, vaults }) => (
+  <>
+    <p><a href="/me">← my nodes</a></p>
+    <h2>My vaults</h2>
+    <p class="muted">Vaults other players' nodes keep for <b>{user.displayName}</b>. Items stay on their computer; this page only queues what you would like their bot to do.</p>
+    {vaults.length === 0 ? (
+      <p class="muted">Nobody has granted you a vault yet. The owner adds your email in their node's console.</p>
+    ) : (
+      <table>
+        <thead><tr><th>owner</th><th>node</th><th>online</th><th>as</th><th>seasonal</th><th>non-seasonal</th><th>role</th><th>trade</th><th></th></tr></thead>
+        <tbody>
+          {vaults.map((v) => (
+            <tr>
+              <td>{v.owner}</td><td>{v.nodeName}</td>
+              <td>{v.online ? <span class="good">online</span> : <span class="muted">last seen {when(v.lastSeenAt)}</span>}</td>
+              <td><code>{v.ign}</code></td><td>{slots(v.seasonal)}</td><td>{slots(v.nonseasonal)}</td>
+              <td>{v.role}{v.paused && <span class="bad"> (paused)</span>}</td><td>{v.trade ? "yes" : "no"}</td>
+              <td><a href={`/vaults/${v.nodeId}`}>open</a></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </>
+);
+
+const Half: FC<{ vault: GuestVaultView; seasonal: boolean; nodeId: string }> = ({ vault, seasonal, nodeId }) => {
+  const h = seasonal ? vault.seasonal : vault.nonseasonal;
+  const label = seasonal ? "Seasonal" : "Non-seasonal";
+  const canWithdraw = vault.role !== "deposit";
+  const free = Math.max(0, h.slots - h.used);
+  const action = `/vaults/${nodeId}/requests`;
+  return (
+    <div class="panel">
+      <h2 style="margin-top:0">{label} <span class="muted">{h.used} of {h.granted} slots used{h.publishedAt ? ` · published ${when(h.publishedAt)}` : " · not published yet"}</span></h2>
+      <form method="post" action={action} class="row">
+        <input type="hidden" name="kind" value="deposit" />
+        <input type="hidden" name="seasonal" value={seasonal ? "1" : "0"} />
+        <label>deposit <input name="count" type="number" min={1} max={Math.min(24, free)} value="1" style="width:70px" /> item(s)</label>
+        <label>on <input name="server" placeholder="server e.g. USEast" required style="width:150px" /></label>
+        <button type="submit" disabled={free === 0 || vault.paused}>queue deposit</button>
+        <span class="muted">{free} free</span>
+      </form>
+      <form method="post" action={action}>
+        <input type="hidden" name="seasonal" value={seasonal ? "1" : "0"} />
+        {h.items.length === 0 ? <p class="muted">nothing here</p> : (
+          <div>
+            {h.items.map((it) => (
+              <label class="pick">
+                <input type="checkbox" name="refs" value={it.ref} />
+                {it.name || it.itemId} <span class="muted">· {it.count} enchant{it.count === 1 ? "" : "s"}{it.enchants ? ` (${it.enchants.join(", ")})` : ""} · {it.online ? "online" : "offline"}</span>
+              </label>
+            ))}
+          </div>
+        )}
+        <div class="row">
+          <label>meet on <input name="server" placeholder="server" style="width:150px" /></label>
+          {canWithdraw ? <button type="submit" name="kind" value="withdraw" disabled={vault.paused || h.items.length === 0}>withdraw picked</button> : <span class="muted">your grant allows deposits only</span>}
+        </div>
+        {vault.trade && (
+          <>
+            <p class="muted" style="margin-bottom:4px">Offer the picked items for, one per line: <code>itemId qty [minEnchants] [exactEnchants]</code></p>
+            <textarea name="want" placeholder="Ring 2&#10;Cloak 1 3"></textarea>
+            <div class="row"><button type="submit" name="kind" value="offer-create" disabled={vault.paused || h.items.length === 0}>post offer with picked</button></div>
+          </>
+        )}
+      </form>
+    </div>
+  );
+};
+
+const describe = (r: GuestRequestWire): string => {
+  switch (r.kind) {
+    case "deposit": return `deposit ${r.count} on ${r.server}`;
+    case "withdraw": return `withdraw ${r.refs?.length ?? 0} on ${r.server}`;
+    case "offer-create": return `offer ${r.refs?.length ?? 0} item(s) for ${(r.want ?? []).map((w) => `${w.qty}× ${w.itemId}`).join(", ")} on ${r.server}`;
+    case "offer-accept": return `accept offer #${r.offerId}`;
+    case "offer-cancel": return `cancel offer #${r.offerId}`;
+  }
+};
+
+export const Vault: FC<{ user: User; vault: GuestVaultView; requests: GuestRequestWire[]; board: OfferWire[]; error?: string; queued?: string }> = ({ user, vault, requests, board, error, queued }) => {
+  const action = `/vaults/${vault.nodeId}/requests`;
+  const mine = board.filter((o) => o.mine && o.onBehalfOf === user.id);
+  const theirs = board.filter((o) => !o.mine);
+  return (
+    <>
+      <p><a href="/vaults">← my vaults</a></p>
+      <h2>{vault.owner}'s node <span class="muted">{vault.nodeName}</span> {vault.online ? <span class="good">online</span> : <span class="muted">last seen {when(vault.lastSeenAt)}</span>}</h2>
+      <p class="muted">You trade there as <code>{vault.ign}</code>: their bot only trades with that name. Role <b>{vault.role}</b>{vault.trade ? ", may trade" : ""}.{vault.paused && <span class="bad"> The owner paused your access.</span>}</p>
+      {error && <p class="bad">{error}</p>}
+      {queued && <p class="good">Request #{queued} queued. The node picks it up on its next poll; meet its bot on the server you named.</p>}
+      <Half vault={vault} seasonal nodeId={vault.nodeId} />
+      <Half vault={vault} seasonal={false} nodeId={vault.nodeId} />
+      {vault.trade && (
+        <div class="panel">
+          <h2 style="margin-top:0">Offers</h2>
+          <b>Mine</b>
+          {mine.length === 0 ? <p class="muted">none open</p> : (
+            <table>
+              <thead><tr><th>#</th><th>gives</th><th>wants</th><th>server</th><th></th></tr></thead>
+              <tbody>
+                {mine.map((o) => (
+                  <tr>
+                    <td>{o.id}</td><td>{o.give.map((g) => g.itemId).join(", ")}</td><td>{o.want.map((w) => `${w.qty}× ${w.itemId}`).join(", ")}</td><td>{o.server}</td>
+                    <td><form method="post" action={action}><input type="hidden" name="kind" value="offer-cancel" /><input type="hidden" name="offerId" value={String(o.id)} /><button class="quiet" type="submit">cancel</button></form></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <b>Open on the board</b>
+          {theirs.length === 0 ? <p class="muted">none</p> : (
+            <table>
+              <thead><tr><th>#</th><th>poster</th><th>gives</th><th>wants</th><th>half</th><th>server</th><th></th></tr></thead>
+              <tbody>
+                {theirs.map((o) => (
+                  <tr>
+                    <td>{o.id}</td><td>{o.poster}</td><td>{o.give.map((g) => g.itemId).join(", ")}</td><td>{o.want.map((w) => `${w.qty}× ${w.itemId}`).join(", ")}</td>
+                    <td>{o.seasonal ? "seasonal" : "non-seasonal"}</td><td>{o.server}</td>
+                    <td><form method="post" action={action}><input type="hidden" name="kind" value="offer-accept" /><input type="hidden" name="offerId" value={String(o.id)} /><button class="quiet" type="submit" disabled={vault.paused}>accept</button></form></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+      <h2>Recent requests</h2>
+      {requests.length === 0 ? <p class="muted">none yet</p> : (
+        <table>
+          <thead><tr><th>#</th><th>what</th><th>half</th><th>state</th><th>result</th><th>when</th></tr></thead>
+          <tbody>
+            {requests.map((r) => (
+              <tr>
+                <td>{r.id}</td><td>{describe(r)}</td><td>{r.seasonal ? "seasonal" : "non-seasonal"}</td>
+                <td class={r.state === "failed" || r.state === "expired" ? "bad" : r.state === "done" ? "good" : ""}>{r.state}</td>
+                <td>{r.result ? (r.result.ok ? r.result.detail ?? "ok" : r.result.error ?? "failed") : <span class="muted">—</span>}</td>
+                <td>{when(r.createdAt)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </>
+  );
+};

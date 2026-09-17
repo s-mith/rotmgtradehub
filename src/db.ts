@@ -2,7 +2,9 @@
 // user accounts, the nodes linked to them (public keys), what nodes report
 // about themselves, ban telemetry, the operator's knobs, and (phase 3) the
 // offer board: offers, rendezvous, receipts and attestations, all by
-// catalog id and node-local ref, never an item instance.
+// catalog id and node-local ref, never an item instance. Phase 4b adds
+// grants (who may use whose vault), what nodes publish about guest vaults,
+// and the queue of guest requests nodes execute.
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
@@ -118,12 +120,60 @@ export function openDb(file = process.env.HUB_DB || path.join(process.env.DATA_D
       at INTEGER NOT NULL,
       UNIQUE (node_id, bot_ign, by_node_id)
     );
+    -- Phase 4b (docs/hub-protocol.md): shared vaults. Grants are keyed by node; the node does every physical thing.
+    CREATE TABLE IF NOT EXISTS grants (
+      id INTEGER PRIMARY KEY,
+      node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      ign TEXT NOT NULL,
+      slots_seasonal INTEGER NOT NULL,
+      slots_nonseasonal INTEGER NOT NULL,
+      role TEXT NOT NULL,
+      trade INTEGER NOT NULL,
+      paused INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE (node_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS guest_vaults (
+      node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      seasonal INTEGER NOT NULL,
+      slots INTEGER NOT NULL,
+      used INTEGER NOT NULL,
+      items_json TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (node_id, user_id, seasonal)
+    );
+    CREATE TABLE IF NOT EXISTS guest_requests (
+      id INTEGER PRIMARY KEY,
+      node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      ign TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      seasonal INTEGER NOT NULL,
+      server TEXT,
+      count INTEGER,
+      refs_json TEXT,
+      want_json TEXT,
+      offer_id INTEGER,
+      state TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      taken_at INTEGER,
+      result_json TEXT
+    );
+    CREATE INDEX IF NOT EXISTS guest_requests_state ON guest_requests (node_id, state, created_at);
+    CREATE INDEX IF NOT EXISTS guest_requests_user ON guest_requests (user_id, node_id, created_at);
   `);
   // Columns added after v0: guard with table_info so an existing database upgrades in place.
   const nodeCols = new Set((db.pragma("table_info(nodes)") as { name: string }[]).map((c) => c.name));
   if (!nodeCols.has("completed_swaps")) db.exec("ALTER TABLE nodes ADD COLUMN completed_swaps INTEGER NOT NULL DEFAULT 0");
   if (!nodeCols.has("frozen")) db.exec("ALTER TABLE nodes ADD COLUMN frozen INTEGER NOT NULL DEFAULT 0");
   if (!nodeCols.has("frozen_reason")) db.exec("ALTER TABLE nodes ADD COLUMN frozen_reason TEXT");
+  const offerCols = new Set((db.pragma("table_info(offers)") as { name: string }[]).map((c) => c.name));
+  // Phase 4b: the guest an offer was posted for, and the guest a taker accepted for (null: the node's owner).
+  if (!offerCols.has("for_user_id")) db.exec("ALTER TABLE offers ADD COLUMN for_user_id INTEGER");
+  if (!offerCols.has("taker_for_user_id")) db.exec("ALTER TABLE offers ADD COLUMN taker_for_user_id INTEGER");
   return db;
 }
 
