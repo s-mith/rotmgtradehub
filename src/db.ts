@@ -220,6 +220,8 @@ export function openDb(file = process.env.HUB_DB || path.join(process.env.DATA_D
   if (!rvNow.has("kind")) db.exec("ALTER TABLE rendezvous ADD COLUMN kind TEXT NOT NULL DEFAULT 'swap'");
   if (!rvNow.has("commons_node_id")) db.exec("ALTER TABLE rendezvous ADD COLUMN commons_node_id TEXT");
   if (!rvNow.has("commons_ref")) db.exec("ALTER TABLE rendezvous ADD COLUMN commons_ref TEXT");
+  // Offers whose meeting completed before "done" existed as a status stayed "accepted"; close them.
+  db.prepare("UPDATE offers SET status = 'done', closed_at = COALESCE(closed_at, updated_at) WHERE status = 'accepted' AND id IN (SELECT offer_id FROM rendezvous WHERE state = 'done' AND offer_id IS NOT NULL)").run();
   return db;
 }
 
