@@ -151,7 +151,7 @@ describe("offers", () => {
       { node_id: a.nodeId, bot_ign: "GiverBot", by_node_id: b.nodeId },
       { node_id: b.nodeId, bot_ign: "TakerBot", by_node_id: a.nodeId },
     ]);
-    expect(offerStatus(offerId).status).toBe("accepted");
+    expect(offerStatus(offerId).status).toBe("done");
     const done = ((await a.call("GET", "/api/v1/rendezvous/mine")).body.rendezvous as RendezvousWire[])[0];
     expect(done).toMatchObject({ id: rv.id, state: "done", reported: { mine: true, partner: true } });
     expect((await a.call("GET", "/api/v1/offers/mine")).body.limits).toEqual({ maxOpenOffers: 1, maxItemsPerSide: 6, completedSwaps: 1, frozen: false });

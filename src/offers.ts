@@ -367,6 +367,7 @@ function complete(db: Db, rv: RendezvousRow, giverReceipt: ReceiptRow, takerRece
     db.prepare("DELETE FROM commons_items WHERE node_id = ? AND ref = ?").run(rv.commons_node_id, rv.commons_ref);
   } else {
     db.prepare("UPDATE nodes SET completed_swaps = completed_swaps + 1 WHERE id IN (?, ?)").run(rv.giver_node_id, rv.taker_node_id);
+    if (rv.offer_id !== null) db.prepare("UPDATE offers SET status = 'done', updated_at = ?, closed_at = ? WHERE id = ? AND status = 'accepted'").run(now, now, rv.offer_id);
   }
   // Either way each side saw the other's bot in a trade window: an attestation of that IGN.
   const att = db.prepare("INSERT OR IGNORE INTO attestations (node_id, bot_ign, by_node_id, at) VALUES (?, ?, ?, ?)");
