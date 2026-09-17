@@ -24,8 +24,10 @@ node's codecs, and lists disputed rendezvous with the nodes they froze, which
 the operator unfreezes from there. Registration, login and node linking are
 rate-limited per IP.
 
-Not here yet: commons, shared vaults (design doc section 6). Each comes as a
-signed endpoint family.
+Shared vaults (grants, published guest vaults, the guest request queue) and
+the commons (items nodes list as free to take, handed over in one-way
+meetings capped per node per day; no points, no currency) are further signed
+endpoint families; the admin page sets the commons daily cap.
 
 ## License
 

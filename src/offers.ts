@@ -5,7 +5,9 @@
 // Phase 4b: an offer may be posted or accepted on behalf of a guest of the
 // node (`onBehalfOf`); the guest's name shows as poster, everything else
 // (limits, freezes, attestations) stays the node's.
-import type { AcceptOfferRequest, CreateOfferRequest, NodeLimitsWire, OfferItemWire, OfferStatusWire, OfferWire, ReceiptWire, RendezvousState, RendezvousWire, WantLineWire } from "rotmgtrade/shared/hubWire";
+// Phase 4: a rendezvous also serves the commons (kind "commons", commons.ts):
+// no offer behind it, the contributor gives, the taker gives nothing back.
+import type { AcceptOfferRequest, CreateOfferRequest, NodeLimitsWire, OfferItemWire, OfferStatusWire, OfferWire, ReceiptWire, RendezvousKind, RendezvousState, RendezvousWire, WantLineWire } from "rotmgtrade/shared/hubWire";
 import type { Db } from "./db";
 import type { NodeRow } from "./nodes";
 
@@ -45,7 +47,9 @@ export interface OfferRow {
 
 export interface RendezvousRow {
   id: number;
-  offer_id: number;
+  /** The offer behind a swap; null for a commons hand-over. */
+  offer_id: number | null;
+  kind: RendezvousKind;
   server: string;
   seasonal: number;
   state: RendezvousState;
@@ -59,6 +63,9 @@ export interface RendezvousRow {
   taker_gives_json: string;
   closed_at: number | null;
   reason: string | null;
+  /** Phase 4: the listed item a commons hand-over is for (its contributor node and ref there). */
+  commons_node_id: string | null;
+  commons_ref: string | null;
 }
 
 export interface ReceiptRow {
@@ -95,7 +102,7 @@ function openOffersOf(db: Db, nodeId: string): number {
 }
 
 function activeTakes(db: Db, nodeId: string): number {
-  return (db.prepare("SELECT COUNT(*) AS n FROM rendezvous WHERE taker_node_id = ? AND state = 'meet'").get(nodeId) as { n: number }).n;
+  return (db.prepare("SELECT COUNT(*) AS n FROM rendezvous WHERE taker_node_id = ? AND state = 'meet' AND kind = 'swap'").get(nodeId) as { n: number }).n;
 }
 
 // --- validation -------------------------------------------------------------
@@ -206,17 +213,21 @@ function canon(list: Qty[]): string {
   return JSON.stringify([...m.entries()].filter(([, n]) => n > 0).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 }
 
-function rendezvousWire(db: Db, rv: RendezvousRow, nodeId: string): RendezvousWire {
+/** One side's view of a rendezvous, swap or commons hand-over: what it gives, what it gets, who it meets. */
+export function rendezvousWire(db: Db, rv: RendezvousRow, nodeId: string): RendezvousWire {
   const giving = rv.giver_node_id === nodeId;
   const mine = JSON.parse(giving ? rv.giver_gives_json : rv.taker_gives_json) as OfferItemWire[];
   const theirs = JSON.parse(giving ? rv.taker_gives_json : rv.giver_gives_json) as OfferItemWire[];
   const partnerId = giving ? rv.taker_node_id : rv.giver_node_id;
-  const offer = db.prepare("SELECT for_user_id, taker_for_user_id FROM offers WHERE id = ?").get(rv.offer_id) as { for_user_id: number | null; taker_for_user_id: number | null } | undefined;
+  // A swap's partner may be a guest of the other node (phase 4b); a commons hand-over is between the nodes' owners.
+  const offer = rv.offer_id === null ? undefined : (db.prepare("SELECT for_user_id, taker_for_user_id FROM offers WHERE id = ?").get(rv.offer_id) as { for_user_id: number | null; taker_for_user_id: number | null } | undefined);
   const partnerGuest = giving ? offer?.taker_for_user_id ?? null : offer?.for_user_id ?? null;
   const reported = db.prepare("SELECT DISTINCT node_id FROM receipts WHERE rendezvous_id = ?").all(rv.id) as { node_id: string }[];
   return {
     id: rv.id,
+    kind: rv.kind,
     offerId: rv.offer_id,
+    commons: rv.kind === "commons" && rv.commons_node_id !== null && rv.commons_ref !== null ? { nodeId: rv.commons_node_id, ref: rv.commons_ref } : null,
     server: rv.server,
     seasonal: !!rv.seasonal,
     state: rv.state,
@@ -337,20 +348,27 @@ function close(db: Db, rv: RendezvousRow, state: RendezvousState, reason: string
   db.prepare("UPDATE rendezvous SET state = ?, reason = ?, closed_at = ? WHERE id = ? AND state = 'meet'").run(state, reason, now, rv.id);
 }
 
+/** A swap's offer reopens; a commons item is simply no longer in a `meet` rendezvous, which is what listed it out. */
 function fail(db: Db, rv: RendezvousRow, state: "failed" | "aborted", reason: string, now: number): void {
   close(db, rv, state, reason, now);
-  reopenOffer(db, rv.offer_id, now);
+  if (rv.offer_id !== null) reopenOffer(db, rv.offer_id, now);
 }
 
 function dispute(db: Db, rv: RendezvousRow, reason: string, now: number): void {
   close(db, rv, "disputed", reason, now);
-  db.prepare("UPDATE offers SET status = 'void', updated_at = ?, closed_at = ? WHERE id = ? AND status = 'accepted'").run(now, now, rv.offer_id);
+  if (rv.offer_id !== null) db.prepare("UPDATE offers SET status = 'void', updated_at = ?, closed_at = ? WHERE id = ? AND status = 'accepted'").run(now, now, rv.offer_id);
   db.prepare("UPDATE nodes SET frozen = 1, frozen_reason = ? WHERE id IN (?, ?)").run(`disputed rendezvous #${rv.id}: ${reason}`, rv.giver_node_id, rv.taker_node_id);
 }
 
 function complete(db: Db, rv: RendezvousRow, giverReceipt: ReceiptRow, takerReceipt: ReceiptRow, now: number): void {
   close(db, rv, "done", null, now);
-  db.prepare("UPDATE nodes SET completed_swaps = completed_swaps + 1 WHERE id IN (?, ?)").run(rv.giver_node_id, rv.taker_node_id);
+  if (rv.kind === "commons") {
+    // The item left the contributor's bot: its listing goes now rather than at the next publish. A free hand-over is not a swap, so the offer limits stay put.
+    db.prepare("DELETE FROM commons_items WHERE node_id = ? AND ref = ?").run(rv.commons_node_id, rv.commons_ref);
+  } else {
+    db.prepare("UPDATE nodes SET completed_swaps = completed_swaps + 1 WHERE id IN (?, ?)").run(rv.giver_node_id, rv.taker_node_id);
+  }
+  // Either way each side saw the other's bot in a trade window: an attestation of that IGN.
   const att = db.prepare("INSERT OR IGNORE INTO attestations (node_id, bot_ign, by_node_id, at) VALUES (?, ?, ?, ?)");
   att.run(rv.taker_node_id, giverReceipt.partner_ign, rv.giver_node_id, now);
   att.run(rv.giver_node_id, takerReceipt.partner_ign, rv.taker_node_id, now);
@@ -388,9 +406,12 @@ export function submitReceipt(db: Db, node: NodeRow, rendezvousId: number, raw: 
     if (theirs) {
       const giver = rv.giver_node_id === node.id ? mine : theirs;
       const taker = rv.giver_node_id === node.id ? theirs : mine;
-      const match = !!mine.ok && !!theirs.ok && canon(JSON.parse(giver.gave_json)) === canon(JSON.parse(taker.got_json)) && canon(JSON.parse(taker.gave_json)) === canon(JSON.parse(giver.got_json));
-      if (match) complete(db, rv, giver, taker, now);
-      else dispute(db, rv, !mine.ok || !theirs.ok ? "one side reported failure, the other success" : "the two receipts disagree on what changed hands", now);
+      const takerGave = canon(JSON.parse(taker.gave_json));
+      const agree = canon(JSON.parse(giver.gave_json)) === canon(JSON.parse(taker.got_json)) && takerGave === canon(JSON.parse(giver.got_json));
+      // A commons hand-over is one-way: the taker must have given nothing.
+      const oneWay = rv.kind !== "commons" || takerGave === canon([]);
+      if (!!mine.ok && !!theirs.ok && agree && oneWay) complete(db, rv, giver, taker, now);
+      else dispute(db, rv, !mine.ok || !theirs.ok ? "one side reported failure, the other success" : !agree ? "the two receipts disagree on what changed hands" : "the taker handed something over in a one-way commons hand-over", now);
     } else if (!mine.ok) {
       // Alone with a failure: the swap did not happen unless the partner already claims it did.
       const partnerOk = db.prepare("SELECT 1 FROM receipts WHERE rendezvous_id = ? AND node_id = ? AND ok = 1").get(rv.id, partnerId);
@@ -445,7 +466,7 @@ export interface FrozenNode {
 
 export function operatorView(db: Db): { swaps: number; disputed: DisputeRow[]; frozen: FrozenNode[] } {
   return {
-    swaps: (db.prepare("SELECT COUNT(*) AS n FROM rendezvous WHERE state = 'done'").get() as { n: number }).n,
+    swaps: (db.prepare("SELECT COUNT(*) AS n FROM rendezvous WHERE state = 'done' AND kind = 'swap'").get() as { n: number }).n,
     disputed: db.prepare(`SELECT r.*, gu.display_name AS giver_name, tu.display_name AS taker_name FROM rendezvous r
       JOIN nodes g ON g.id = r.giver_node_id JOIN users gu ON gu.id = g.user_id
       JOIN nodes t ON t.id = r.taker_node_id JOIN users tu ON tu.id = t.user_id

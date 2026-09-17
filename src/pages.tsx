@@ -3,6 +3,7 @@
 import type { FC, PropsWithChildren } from "hono/jsx";
 import type { GuestRequestWire, OfferWire } from "rotmgtrade/shared/hubWire";
 import type { User } from "./auth";
+import type { CommonsBoardItem, commonsOperatorView } from "./commons";
 import type { HubSettings } from "./db";
 import type { GuestVaultView, HalfView } from "./grants";
 import type { NodeRow } from "./nodes";
@@ -72,7 +73,7 @@ export const Me: FC<{ user: User; nodes: (NodeRow & { bots: number; online: numb
       <form method="post" action="/logout" style="margin-left:auto"><button class="quiet" type="submit">log out</button></form>
       {admin && <a href="/admin">admin</a>}
     </div>
-    <p><a href="/vaults">my vaults on other people's nodes →</a></p>
+    <p><a href="/vaults">my vaults on other people's nodes →</a> · <a href="/commons">the commons →</a></p>
     <h2>My nodes</h2>
     {nodes.length === 0 ? (
       <p class="muted">No node linked yet. In rotmgtrade, open the node console → Fleet → Node and log in with this account.</p>
@@ -93,7 +94,7 @@ export const Me: FC<{ user: User; nodes: (NodeRow & { bots: number; online: numb
   </>
 );
 
-export const Admin: FC<{ settings: HubSettings; bans: BanSummary; nodes: number; board: ReturnType<typeof operatorView> }> = ({ settings, bans, nodes, board }) => (
+export const Admin: FC<{ settings: HubSettings; bans: BanSummary; nodes: number; board: ReturnType<typeof operatorView>; commons: ReturnType<typeof commonsOperatorView> }> = ({ settings, bans, nodes, board, commons }) => (
   <>
     <p><a href="/me">← my nodes</a></p>
     <h2>Version feed</h2>
@@ -104,6 +105,8 @@ export const Admin: FC<{ settings: HubSettings; bans: BanSummary; nodes: number;
       <div class="row"><label>download URL <input name="downloadUrl" value={settings.downloadUrl} style="width:360px" /></label></div>
       <div class="row"><label>current Realm build <input name="gameVersion" value={settings.gameVersion} /></label>
         <label>known builds <input name="knownBuilds" value={settings.knownBuilds.join(" ")} style="width:300px" /></label></div>
+      <div class="row"><label>commons daily cap <input name="commonsDailyCap" type="number" min={0} max={100} value={String(settings.commonsDailyCap)} style="width:80px" /></label>
+        <span class="muted">hand-overs one node may take per rolling 24 h (0 closes the commons to takers)</span></div>
       <div class="row"><button type="submit">Publish</button><span class="muted">last published {when(settings.buildUpdatedAt || null)}</span></div>
     </form>
     <h2>Ban telemetry</h2>
@@ -118,6 +121,8 @@ export const Admin: FC<{ settings: HubSettings; bans: BanSummary; nodes: number;
     </div>
     <h2>Swaps</h2>
     <p class="muted">{board.swaps} completed swap{board.swaps === 1 ? "" : "s"} (rendezvous whose two receipts matched).</p>
+    <h2>Commons</h2>
+    <p class="muted">{commons.listed} item{commons.listed === 1 ? "" : "s"} listed by {commons.contributors} node{commons.contributors === 1 ? "" : "s"} · {commons.handovers} hand-over{commons.handovers === 1 ? "" : "s"} completed. Items stay on the contributors' bots; the cap above is the only limit.</p>
     <h2>Disputes</h2>
     <p class="muted">A rendezvous whose receipts disagree freezes both nodes: no new offers or accepts until you unfreeze them here. Look at both receipts before you do.</p>
     <div class="panel">
@@ -128,7 +133,7 @@ export const Admin: FC<{ settings: HubSettings; bans: BanSummary; nodes: number;
           <tbody>
             {board.disputed.map((r) => (
               <tr>
-                <td>{r.id}</td><td>{r.offer_id}</td><td>{r.server}</td>
+                <td>{r.id}</td><td>{r.offer_id ?? "commons"}</td><td>{r.server}</td>
                 <td>{r.giver_name} <code>{r.giver_bot_ign}</code></td><td>{r.taker_name} <code>{r.taker_bot_ign}</code></td>
                 <td>{r.reason ?? "—"}</td><td>{when(r.closed_at)}</td>
               </tr>
@@ -305,3 +310,31 @@ export const Vault: FC<{ user: User; vault: GuestVaultView; requests: GuestReque
     </>
   );
 };
+
+// --- phase 4: the commons ---------------------------------------------------
+
+const ago = (ms: number, now: number): string => {
+  const s = Math.max(0, Math.round((now - ms) / 1000));
+  return s < 60 ? `${s}s ago` : `${Math.floor(s / 60)} min ago`;
+};
+
+export const Commons: FC<{ items: CommonsBoardItem[]; dailyCap: number; now: number }> = ({ items, dailyCap, now }) => (
+  <>
+    <p><a href="/me">← my nodes</a></p>
+    <h2>The commons</h2>
+    <p class="muted">Items other players' nodes give away, free: no points, nothing owed. They stay on the contributor's bots until taken. A node may take up to <b>{dailyCap}</b> per 24 hours, from its own console; only contributors seen in the last few minutes are shown.</p>
+    {items.length === 0 ? <p class="muted">Nothing is listed right now.</p> : (
+      <table>
+        <thead><tr><th>item</th><th>enchants</th><th>half</th><th>contributor</th><th>node</th></tr></thead>
+        <tbody>
+          {items.map((it) => (
+            <tr>
+              <td>{it.name || it.itemId}</td><td>{it.count}</td><td>{it.seasonal ? "seasonal" : "non-seasonal"}</td>
+              <td>{it.contributor}</td><td><span class="good">online</span> <span class="muted">seen {ago(it.lastSeenAt, now)}</span></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </>
+);

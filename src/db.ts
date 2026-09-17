@@ -4,12 +4,32 @@
 // offer board: offers, rendezvous, receipts and attestations, all by
 // catalog id and node-local ref, never an item instance. Phase 4b adds
 // grants (who may use whose vault), what nodes publish about guest vaults,
-// and the queue of guest requests nodes execute.
+// and the queue of guest requests nodes execute. Phase 4 adds the commons:
+// what each node lists as free to take (no points, no ledger, no price) and
+// a rendezvous kind for the one-way hand-over.
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 
 export type Db = Database.Database;
+
+/** rendezvous as phase 3 made it, except offer_id is nullable since phase 4 (a commons hand-over has no offer). Shared by CREATE TABLE and the rebuild below. */
+const RENDEZVOUS_COLUMNS = `
+      id INTEGER PRIMARY KEY,
+      offer_id INTEGER REFERENCES offers(id) ON DELETE CASCADE,
+      server TEXT NOT NULL,
+      seasonal INTEGER NOT NULL,
+      state TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      deadline_at INTEGER NOT NULL,
+      giver_node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+      giver_bot_ign TEXT NOT NULL,
+      giver_gives_json TEXT NOT NULL,
+      taker_node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+      taker_bot_ign TEXT NOT NULL,
+      taker_gives_json TEXT NOT NULL,
+      closed_at INTEGER,
+      reason TEXT`;
 
 export function openDb(file = process.env.HUB_DB || path.join(process.env.DATA_DIR || "./data", "hub.db")): Db {
   if (file !== ":memory:") fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -81,22 +101,7 @@ export function openDb(file = process.env.HUB_DB || path.join(process.env.DATA_D
       taker_node_id TEXT REFERENCES nodes(id) ON DELETE SET NULL
     );
     CREATE INDEX IF NOT EXISTS offers_status ON offers (status, created_at);
-    CREATE TABLE IF NOT EXISTS rendezvous (
-      id INTEGER PRIMARY KEY,
-      offer_id INTEGER NOT NULL REFERENCES offers(id) ON DELETE CASCADE,
-      server TEXT NOT NULL,
-      seasonal INTEGER NOT NULL,
-      state TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      deadline_at INTEGER NOT NULL,
-      giver_node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-      giver_bot_ign TEXT NOT NULL,
-      giver_gives_json TEXT NOT NULL,
-      taker_node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-      taker_bot_ign TEXT NOT NULL,
-      taker_gives_json TEXT NOT NULL,
-      closed_at INTEGER,
-      reason TEXT
+    CREATE TABLE IF NOT EXISTS rendezvous (${RENDEZVOUS_COLUMNS}
     );
     CREATE INDEX IF NOT EXISTS rendezvous_state ON rendezvous (state, deadline_at);
     CREATE TABLE IF NOT EXISTS receipts (
@@ -164,6 +169,21 @@ export function openDb(file = process.env.HUB_DB || path.join(process.env.DATA_D
     );
     CREATE INDEX IF NOT EXISTS guest_requests_state ON guest_requests (node_id, state, created_at);
     CREATE INDEX IF NOT EXISTS guest_requests_user ON guest_requests (user_id, node_id, created_at);
+    -- Phase 4 (docs/hub-protocol.md): the commons. What each node lists as free to take; the items stay on its bots.
+    CREATE TABLE IF NOT EXISTS commons_items (
+      node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+      ref TEXT NOT NULL,
+      item_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      enchants_json TEXT NOT NULL,
+      count INTEGER NOT NULL,
+      seasonal INTEGER NOT NULL,
+      bot_ign TEXT NOT NULL,
+      listed_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (node_id, ref)
+    );
+    CREATE INDEX IF NOT EXISTS commons_items_listed ON commons_items (listed_at);
   `);
   // Columns added after v0: guard with table_info so an existing database upgrades in place.
   const nodeCols = new Set((db.pragma("table_info(nodes)") as { name: string }[]).map((c) => c.name));
@@ -174,6 +194,32 @@ export function openDb(file = process.env.HUB_DB || path.join(process.env.DATA_D
   // Phase 4b: the guest an offer was posted for, and the guest a taker accepted for (null: the node's owner).
   if (!offerCols.has("for_user_id")) db.exec("ALTER TABLE offers ADD COLUMN for_user_id INTEGER");
   if (!offerCols.has("taker_for_user_id")) db.exec("ALTER TABLE offers ADD COLUMN taker_for_user_id INTEGER");
+  // Phase 4: a commons hand-over has no offer, so rendezvous.offer_id became nullable. SQLite cannot drop NOT NULL in
+  // place; a database from phase 3 gets the table rebuilt (the documented copy, drop, rename dance, with foreign keys off
+  // for the duration and ids kept so receipts still point at their rows).
+  const rvCols = db.pragma("table_info(rendezvous)") as { name: string; notnull: number }[];
+  if (rvCols.some((c) => c.name === "offer_id" && c.notnull)) {
+    db.pragma("foreign_keys = OFF");
+    try {
+      db.transaction(() => {
+        db.exec(`CREATE TABLE rendezvous_new (${RENDEZVOUS_COLUMNS})`);
+        const fresh = new Set((db.pragma("table_info(rendezvous_new)") as { name: string }[]).map((c) => c.name));
+        const cols = rvCols.map((c) => c.name).filter((n) => fresh.has(n)).join(", ");
+        db.exec(`INSERT INTO rendezvous_new (${cols}) SELECT ${cols} FROM rendezvous;
+          DROP TABLE rendezvous;
+          ALTER TABLE rendezvous_new RENAME TO rendezvous;
+          CREATE INDEX IF NOT EXISTS rendezvous_state ON rendezvous (state, deadline_at);`);
+        for (const t of ["rendezvous", "receipts"]) if ((db.pragma(`foreign_key_check(${t})`) as unknown[]).length) throw new Error(`rendezvous rebuild broke a foreign key in ${t}`);
+      })();
+    } finally {
+      db.pragma("foreign_keys = ON");
+    }
+  }
+  // Phase 4: what a rendezvous is for, and for a commons hand-over, which listed item (guarded like the columns above).
+  const rvNow = new Set((db.pragma("table_info(rendezvous)") as { name: string }[]).map((c) => c.name));
+  if (!rvNow.has("kind")) db.exec("ALTER TABLE rendezvous ADD COLUMN kind TEXT NOT NULL DEFAULT 'swap'");
+  if (!rvNow.has("commons_node_id")) db.exec("ALTER TABLE rendezvous ADD COLUMN commons_node_id TEXT");
+  if (!rvNow.has("commons_ref")) db.exec("ALTER TABLE rendezvous ADD COLUMN commons_ref TEXT");
   return db;
 }
 
@@ -185,9 +231,11 @@ export interface HubSettings {
   knownBuilds: string[];
   gameVersion: string;
   buildUpdatedAt: number;
+  /** Phase 4: commons hand-overs one node may take per rolling 24 h. */
+  commonsDailyCap: number;
 }
 
-const DEFAULTS: HubSettings = { minNodeVersion: "0.1.0", latestNodeVersion: "0.1.0", downloadUrl: "", knownBuilds: [], gameVersion: "", buildUpdatedAt: 0 };
+const DEFAULTS: HubSettings = { minNodeVersion: "0.1.0", latestNodeVersion: "0.1.0", downloadUrl: "", knownBuilds: [], gameVersion: "", buildUpdatedAt: 0, commonsDailyCap: 8 };
 
 export function getSettings(db: Db): HubSettings {
   const out = { ...DEFAULTS };

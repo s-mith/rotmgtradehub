@@ -2,15 +2,16 @@
 // website for people. No bots, no items, no game credentials anywhere here.
 import { Hono } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
-import type { AcceptOfferRequest, CreateGrantRequest, CreateOfferRequest, HeartbeatRequest, LinkRequest, PublishVaultsRequest, UpdateGrantRequest, VersionInfo, WantLineWire } from "rotmgtrade/shared/hubWire";
+import type { AcceptOfferRequest, CommonsWithdrawRequest, CreateGrantRequest, CreateOfferRequest, HeartbeatRequest, LinkRequest, PublishCommonsRequest, PublishVaultsRequest, UpdateGrantRequest, VersionInfo, WantLineWire } from "rotmgtrade/shared/hubWire";
 import { authenticate, createSession, deleteSession, isAdmin, register, userFromSession, type User } from "./auth";
 import { getSettings, setSettings, type Db } from "./db";
 import { linkNode, nodesOf, parseJson, recordHeartbeat, signedByNode, unlinkNode } from "./nodes";
 import { abortRendezvous, acceptOffer, cancelOffer, createOffer, listMine, listOpen, operatorView, rendezvousFor, submitReceipt, unfreezeNode } from "./offers";
 import { createGrant, createGuestRequest, deleteGrant, guestVaultOf, guestVaultsFor, listGrants, publishVaults, recentRequestsFor, submitResult, takePendingRequests, updateGrant, type GuestRequestInput } from "./grants";
+import { commonsBoard, commonsOperatorView, commonsStatus, listCommons, listMine as listMyCommons, publishCommons, withdrawCommons } from "./commons";
 import { nodeById } from "./nodes";
 import { acceptReports, summarize } from "./telemetry";
-import { Layout, Home, Me, Admin, Vaults, Vault } from "./pages";
+import { Layout, Home, Me, Admin, Vaults, Vault, Commons } from "./pages";
 import { rateLimit } from "./ratelimit";
 
 const COOKIE = "hub_session";
@@ -145,6 +146,28 @@ export function createApp(db: Db): Hono {
     const r = submitResult(db, c.get("node"), id, body);
     return r.ok ? c.json({ ok: true, state: r.state }) : c.json({ error: r.error }, r.status);
   });
+  // Phase 4: the commons (docs/hub-protocol.md). Free to take, bounded by the operator's daily cap.
+  signed.post("/commons/publish", (c) => {
+    const body = parseJson<PublishCommonsRequest>(c);
+    if (!body) return c.json({ error: "bad json" }, 400);
+    const r = publishCommons(db, c.get("node"), body);
+    return r.ok ? c.json({ ok: true, listed: r.listed }) : c.json({ error: r.error }, r.status);
+  });
+  signed.get("/commons", (c) => {
+    const q = c.req.query("seasonal");
+    const node = c.get("node");
+    return c.json({ items: listCommons(db, node, q === "1" ? true : q === "0" ? false : undefined), status: commonsStatus(db, node) });
+  });
+  signed.get("/commons/mine", (c) => {
+    const node = c.get("node");
+    return c.json({ items: listMyCommons(db, node), status: commonsStatus(db, node) });
+  });
+  signed.post("/commons/withdraw", (c) => {
+    const body = parseJson<CommonsWithdrawRequest>(c);
+    if (!body) return c.json({ error: "bad json" }, 400);
+    const r = withdrawCommons(db, c.get("node"), body);
+    return r.ok ? c.json({ rendezvous: r.rendezvous }) : c.json({ error: r.error }, r.status);
+  });
   app.route("/api/v1", signed);
   app.all("/api/*", (c) => c.json({ error: "not found" }, 404));
 
@@ -233,10 +256,16 @@ export function createApp(db: Db): Hono {
     if (!r.ok) return c.redirect(`/vaults/${encodeURIComponent(nodeId)}?error=${encodeURIComponent(r.error)}`);
     return c.redirect(`/vaults/${encodeURIComponent(nodeId)}?queued=${r.request.id}`);
   });
+  // Phase 4: what the commons holds right now, read-only; taking is done from a node's own console.
+  app.get("/commons", (c) => {
+    const user = me(c);
+    if (!user) return c.redirect("/");
+    return c.html(<Layout title="the commons"><Commons items={commonsBoard(db)} dailyCap={getSettings(db).commonsDailyCap} now={Date.now()} /></Layout>);
+  });
   app.get("/admin", (c) => {
     const user = me(c);
     if (!isAdmin(user)) return c.text("not for you", 403);
-    return c.html(<Layout title="admin"><Admin settings={getSettings(db)} bans={summarize(db)} nodes={(db.prepare("SELECT COUNT(*) AS n FROM nodes").get() as { n: number }).n} board={operatorView(db)} /></Layout>);
+    return c.html(<Layout title="admin"><Admin settings={getSettings(db)} bans={summarize(db)} nodes={(db.prepare("SELECT COUNT(*) AS n FROM nodes").get() as { n: number }).n} board={operatorView(db)} commons={commonsOperatorView(db)} /></Layout>);
   });
   app.post("/admin/nodes/:id/unfreeze", (c) => {
     const user = me(c);
@@ -248,7 +277,9 @@ export function createApp(db: Db): Hono {
     const user = me(c);
     if (!isAdmin(user)) return c.text("not for you", 403);
     const f = await c.req.parseBody();
+    const cap = /^\d{1,3}$/.test(String(f.commonsDailyCap ?? "").trim()) ? Number(String(f.commonsDailyCap).trim()) : NaN;
     setSettings(db, {
+      commonsDailyCap: Number.isInteger(cap) && cap >= 0 && cap <= 100 ? cap : undefined,
       minNodeVersion: String(f.minNodeVersion ?? "").trim() || undefined,
       latestNodeVersion: String(f.latestNodeVersion ?? "").trim() || undefined,
       downloadUrl: String(f.downloadUrl ?? "").trim(),
