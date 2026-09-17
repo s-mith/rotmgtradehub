@@ -7,7 +7,7 @@
 // free slots and refs.
 import type {
   CreateGrantRequest, GrantRole, GrantWire, GuestRequestKind, GuestRequestResult, GuestRequestState, GuestRequestWire, GuestVaultHalfWire, PublishVaultsRequest, UpdateGrantRequest, WantLineWire,
-} from "rotmgtrade/shared/hubWire";
+} from "rotmgtradenode/shared/hubWire";
 import type { User } from "./auth";
 import type { Db } from "./db";
 import type { NodeRow } from "./nodes";

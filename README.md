@@ -1,6 +1,6 @@
 # rotmgtradehub
 
-The hub for [rotmgtrade](../rotmgtrade) nodes: user accounts, the node
+The hub for [rotmgtradenode](../rotmgtradenode) nodes: user accounts, the node
 registry, the version feed, ban telemetry, and the offer board (offers,
 rendezvous, receipts). It runs no bots, holds no items (offers carry catalog
 ids and the poster's own refs), never sees a game credential, and handles no
@@ -9,7 +9,7 @@ uses comes from the environment, which is why it can be open source: anyone
 can check that the hub really holds nothing worth taking.
 
 The protocol nodes speak is `docs/hub-protocol.md` in the node repo, and the
-signing helpers are imported from there (`rotmgtrade/shared/hubWire`).
+signing helpers are imported from there (`rotmgtradenode/shared/hubWire`).
 
 ```
 npm install

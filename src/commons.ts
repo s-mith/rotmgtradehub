@@ -4,7 +4,7 @@
 // withdrawer's bot receives, and the receipts of phase 3 close it. What
 // bounds it is the operator's per-node daily cap and that nobody takes their
 // own items. No points, no ledger, no price anywhere.
-import type { CommonsItemWire, CommonsListingWire, CommonsStatusWire, CommonsWithdrawRequest, OfferItemWire, PublishCommonsRequest, RendezvousWire } from "rotmgtrade/shared/hubWire";
+import type { CommonsItemWire, CommonsListingWire, CommonsStatusWire, CommonsWithdrawRequest, OfferItemWire, PublishCommonsRequest, RendezvousWire } from "rotmgtradenode/shared/hubWire";
 import { getSettings, type Db } from "./db";
 import { NODE_ONLINE_MS } from "./grants";
 import type { NodeRow } from "./nodes";

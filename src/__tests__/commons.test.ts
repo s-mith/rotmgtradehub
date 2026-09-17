@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { generateNodeKeypair, signRequest, type CommonsItemWire, type CommonsListingWire, type CommonsStatusWire, type OfferWire, type ReceiptWire, type RendezvousWire } from "rotmgtrade/shared/hubWire";
+import { generateNodeKeypair, signRequest, type CommonsItemWire, type CommonsListingWire, type CommonsStatusWire, type OfferWire, type ReceiptWire, type RendezvousWire } from "rotmgtradenode/shared/hubWire";
 import { getSettings, openDb, setSettings, type Db } from "../db";
 import { createApp } from "../app";
 import { register } from "../auth";

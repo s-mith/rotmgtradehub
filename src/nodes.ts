@@ -1,7 +1,7 @@
 // Node registry: linking, the signed-request guard, heartbeats, unlinking.
 import { randomBytes } from "node:crypto";
 import type { Context, MiddlewareHandler } from "hono";
-import { verifyRequest, type HeartbeatRequest, type LinkRequest } from "rotmgtrade/shared/hubWire";
+import { verifyRequest, type HeartbeatRequest, type LinkRequest } from "rotmgtradenode/shared/hubWire";
 import { authenticate } from "./auth";
 import type { Db } from "./db";
 

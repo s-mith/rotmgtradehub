@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { generateNodeKeypair, signRequest, type OfferItemWire, type OfferWire, type ReceiptWire, type RendezvousWire } from "rotmgtrade/shared/hubWire";
+import { generateNodeKeypair, signRequest, type OfferItemWire, type OfferWire, type ReceiptWire, type RendezvousWire } from "rotmgtradenode/shared/hubWire";
 import { openDb, type Db } from "../db";
 import { createApp } from "../app";
 import { register } from "../auth";

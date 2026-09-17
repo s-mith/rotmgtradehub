@@ -1,7 +1,7 @@
 // Server-rendered pages. Plain forms, no client script: the hub website is
 // for accounts and nodes; the node's own UI does the heavy lifting.
 import type { FC, PropsWithChildren } from "hono/jsx";
-import type { GuestRequestWire, OfferWire } from "rotmgtrade/shared/hubWire";
+import type { GuestRequestWire, OfferWire } from "rotmgtradenode/shared/hubWire";
 import type { User } from "./auth";
 import type { CommonsBoardItem, commonsOperatorView } from "./commons";
 import type { HubSettings } from "./db";
@@ -41,7 +41,7 @@ export const Layout: FC<PropsWithChildren<{ title: string }>> = ({ title, childr
 
 export const Home: FC<{ error?: string }> = ({ error }) => (
   <>
-    <p class="muted">Accounts for rotmgtrade nodes. Your vault runs on your own computer; this site only lets nodes find each other.</p>
+    <p class="muted">Accounts for rotmgtradenode nodes. Your vault runs on your own computer; this site only lets nodes find each other.</p>
     {error && <p class="bad">{error}</p>}
     <div class="panel">
       <h2 style="margin-top:0">Log in</h2>
@@ -76,7 +76,7 @@ export const Me: FC<{ user: User; nodes: (NodeRow & { bots: number; online: numb
     <p><a href="/vaults">my vaults on other people's nodes →</a> · <a href="/commons">the commons →</a></p>
     <h2>My nodes</h2>
     {nodes.length === 0 ? (
-      <p class="muted">No node linked yet. In rotmgtrade, open the node console → Fleet → Node and log in with this account.</p>
+      <p class="muted">No node linked yet. In rotmgtradenode, open the node console → Fleet → Node and log in with this account.</p>
     ) : (
       <table>
         <thead><tr><th>name</th><th>node id</th><th>version</th><th>Realm build</th><th>bots</th><th>last seen</th><th></th></tr></thead>

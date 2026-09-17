@@ -7,7 +7,7 @@
 // (limits, freezes, attestations) stays the node's.
 // Phase 4: a rendezvous also serves the commons (kind "commons", commons.ts):
 // no offer behind it, the contributor gives, the taker gives nothing back.
-import type { AcceptOfferRequest, CreateOfferRequest, NodeLimitsWire, OfferItemWire, OfferStatusWire, OfferWire, ReceiptWire, RendezvousKind, RendezvousState, RendezvousWire, WantLineWire } from "rotmgtrade/shared/hubWire";
+import type { AcceptOfferRequest, CreateOfferRequest, NodeLimitsWire, OfferItemWire, OfferStatusWire, OfferWire, ReceiptWire, RendezvousKind, RendezvousState, RendezvousWire, WantLineWire } from "rotmgtradenode/shared/hubWire";
 import type { Db } from "./db";
 import type { NodeRow } from "./nodes";
 

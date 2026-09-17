@@ -2,7 +2,7 @@
 // website for people. No bots, no items, no game credentials anywhere here.
 import { Hono } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
-import type { AcceptOfferRequest, CommonsWithdrawRequest, CreateGrantRequest, CreateOfferRequest, HeartbeatRequest, LinkRequest, PublishCommonsRequest, PublishVaultsRequest, UpdateGrantRequest, VersionInfo, WantLineWire } from "rotmgtrade/shared/hubWire";
+import type { AcceptOfferRequest, CommonsWithdrawRequest, CreateGrantRequest, CreateOfferRequest, HeartbeatRequest, LinkRequest, PublishCommonsRequest, PublishVaultsRequest, UpdateGrantRequest, VersionInfo, WantLineWire } from "rotmgtradenode/shared/hubWire";
 import { authenticate, createSession, deleteSession, isAdmin, register, userFromSession, type User } from "./auth";
 import { getSettings, setSettings, type Db } from "./db";
 import { linkNode, nodesOf, parseJson, recordHeartbeat, signedByNode, unlinkNode } from "./nodes";

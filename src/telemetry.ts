@@ -1,7 +1,7 @@
 // Ban telemetry intake and the aggregate the operator reads (design doc §8).
 // Reports are already anonymous (salted per node); the hub adds the node id
 // so a wave can be split by node, lane, cohort and build.
-import type { BanReportWire } from "rotmgtrade/shared/hubWire";
+import type { BanReportWire } from "rotmgtradenode/shared/hubWire";
 import type { Db } from "./db";
 
 const LANES = new Set(["idle", "owner-trade", "swap", "commons", "tutorial-walk", "unknown"]);
