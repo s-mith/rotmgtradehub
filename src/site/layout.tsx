@@ -36,7 +36,7 @@ export const Layout: FC<PropsWithChildren<{ title: string; frame?: Frame; refres
         <meta name="color-scheme" content="dark" />
         {refresh ? <meta http-equiv="refresh" content={String(refresh)} /> : null}
         <title>{title === "rotmg trade" ? title : `${title} · rotmg trade`}</title>
-        <link rel="icon" href="/logo.png" />
+        <link rel="icon" href={staticUrl("logo.png")} />
         <link rel="stylesheet" href={staticUrl("hub.css")} />
       </head>
       <body>
@@ -44,7 +44,7 @@ export const Layout: FC<PropsWithChildren<{ title: string; frame?: Frame; refres
           <header class="site">
             {/* The name, not a link: the tabs below are the way around. */}
             <div class="brand">
-              <img src="/logo.png" alt="" width={48} height={48} />
+              <img src={staticUrl("logo.png")} alt="" width={48} height={48} />
               <span class="wordmark">
                 rotmg trade
                 {/* The beta sash across the wordmark's corner, as on the node. */}

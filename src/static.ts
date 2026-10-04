@@ -50,8 +50,8 @@ export function registerStatic(app: Hono): void {
     const current = c.req.query("v") !== undefined && c.req.query("v") === versionOf(name);
     return serveFile(path.join(PUBLIC_DIR, name), current ? "public, max-age=31536000, immutable" : "public, max-age=300");
   });
-  app.get("/logo.png", () => serveFile(path.join(PUBLIC_DIR, "logo.png"), "public, max-age=86400"));
-  app.get("/favicon.ico", () => serveFile(path.join(PUBLIC_DIR, "logo.png"), "public, max-age=86400"));
+  app.get("/logo.png", () => serveFile(path.join(PUBLIC_DIR, "logo.png"), "no-cache"));
+  app.get("/favicon.ico", () => serveFile(path.join(PUBLIC_DIR, "logo.png"), "no-cache"));
   // The sprite sheet's name carries a content hash, so it can be cached for good.
   app.get("/sprites/:file", (c) => {
     const sheet = spriteSheetPath();
