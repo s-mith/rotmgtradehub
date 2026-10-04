@@ -247,6 +247,16 @@ describe("rate limits", () => {
     expect((await post("/api/v1/nodes/link", { code: "WRNG2345", publicKey: kp.publicKeyPem, name: "x", version: "0" }, { "x-forwarded-for": "8.8.8.8" })).status).toBe(401);
     vi.unstubAllEnvs();
   });
+  it("counts by the proxy's own client-address header when one is named", async () => {
+    vi.stubEnv("CLIENT_IP_HEADER", "cf-connecting-ip");
+    const kp = generateNodeKeypair();
+    let last = 0;
+    // The proxy overwrites its header, so a made-up X-Forwarded-For changes nothing.
+    for (let i = 0; i < 11; i++) last = (await post("/api/v1/nodes/link", { code: "WRNG2345", publicKey: kp.publicKeyPem, name: "x", version: "0" }, { "cf-connecting-ip": "5.5.5.5", "x-forwarded-for": `4.4.4.${i}` })).status;
+    expect(last).toBe(429);
+    expect((await post("/api/v1/nodes/link", { code: "WRNG2345", publicKey: kp.publicKeyPem, name: "x", version: "0" }, { "cf-connecting-ip": "6.6.6.6" })).status).toBe(401);
+    vi.unstubAllEnvs();
+  });
   it("ignores a forwarded address nobody vouches for", async () => {
     const kp = generateNodeKeypair();
     let last = 0;

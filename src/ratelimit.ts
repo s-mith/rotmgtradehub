@@ -8,12 +8,21 @@ interface Bucket { hits: number[] }
 const buckets = new Map<string, Bucket>();
 
 /**
- * Who a request comes from. With TRUST_PROXY=<n>, the number of proxies in
- * front of the hub that add to X-Forwarded-For (usually 1), the address the
- * nearest of them saw; otherwise the connection's own address, so a visitor
- * cannot pick their own bucket by sending the header themselves.
+ * Who a request comes from. With CLIENT_IP_HEADER, the header the proxy in
+ * front of the hub sets to the visitor's address and overwrites when a visitor
+ * sends it (CF-Connecting-IP behind Cloudflare, Fly-Client-IP on Fly.io): only
+ * safe when nothing reaches the hub except through that proxy. With
+ * TRUST_PROXY=<n>, the number of proxies in front of the hub that add to
+ * X-Forwarded-For (usually 1), the address the nearest of them saw; otherwise
+ * the connection's own address, so a visitor cannot pick their own bucket by
+ * sending the header themselves.
  */
 export function clientIp(c: Context): string {
+  const named = process.env.CLIENT_IP_HEADER?.trim();
+  if (named) {
+    const ip = c.req.header(named)?.trim();
+    if (ip) return ip;
+  }
   const hops = Number(process.env.TRUST_PROXY ?? 0);
   if (Number.isInteger(hops) && hops > 0) {
     const chain = (c.req.header("x-forwarded-for") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
