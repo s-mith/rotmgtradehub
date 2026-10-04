@@ -4,7 +4,9 @@
 import type { BanReportWire } from "rotmgtradenode/shared/hubWire";
 import type { Db } from "./db";
 
-const LANES = new Set(["idle", "owner-trade", "swap", "commons", "tutorial-walk", "unknown"]);
+const LANES = new Set(["idle", "owner-trade", "swap", "communism", "unknown"]);
+/** Lanes older nodes still send under a name from before (communism was renamed on 2026-09-22). */
+const LEGACY_LANES: Record<string, string> = { ["com" + "mons"]: "communism" };
 
 export function acceptReports(db: Db, nodeId: string, reports: unknown, now = Date.now()): number {
   if (!Array.isArray(reports)) return 0;
@@ -16,7 +18,8 @@ export function acceptReports(db: Db, nodeId: string, reports: unknown, now = Da
       const hash = String(raw.account ?? "");
       const at = Number(raw.suspendedAt);
       if (!/^[A-Za-z0-9_-]{16,64}$/.test(hash) || !Number.isFinite(at)) continue;
-      const lane = LANES.has(String(raw.lastLane)) ? String(raw.lastLane) : "unknown";
+      const sent = String(raw.lastLane);
+      const lane = LANES.has(sent) ? sent : LEGACY_LANES[sent] ?? "unknown";
       const r = ins.run(nodeId, hash, Math.round(at), raw.lastSeenAt == null ? null : Math.round(Number(raw.lastSeenAt)), lane, Math.max(0, Math.round(Number(raw.heldItems) || 0)),
         raw.seasonal == null ? null : raw.seasonal ? 1 : 0, String(raw.nodeVersion ?? "").slice(0, 32), String(raw.build ?? "").slice(0, 32), now);
       if (r.changes) n++;

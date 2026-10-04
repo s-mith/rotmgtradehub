@@ -1,3 +1,4 @@
+import "./env";
 import { serve } from "@hono/node-server";
 import { openDb } from "./db";
 import { createApp } from "./app";

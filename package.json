@@ -8,7 +8,8 @@
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "preview": "tsx scripts/preview.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.1",
