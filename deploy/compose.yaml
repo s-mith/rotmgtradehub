@@ -1,0 +1,46 @@
+# The hub on one machine behind a Cloudflare Tunnel (deploy/README.md): no
+# open ports, and nothing reaches the hub except through the tunnel, which is
+# why the hub may trust Cloudflare's CF-Connecting-IP for the visitor's address.
+#
+#   deploy/up.sh        build and (re)start both
+#
+# Everything that is not code lives in HUB_HOME (default ~/rotmg-hub, set by up.sh):
+#   hub.env             the hub's settings and secrets (README.md)
+#   data/               the database and its hourly backups
+#   cloudflared/        the tunnel's credentials and config.yml
+name: rotmg-hub
+services:
+  hub:
+    build:
+      context: ..
+      additional_contexts:
+        rotmgtradenode: ../../rotmgtradenode
+    image: rotmgtradehub:local
+    restart: unless-stopped
+    env_file: ${HUB_HOME:?run deploy/up.sh}/hub.env
+    environment:
+      DATA_DIR: /data
+      CLIENT_IP_HEADER: cf-connecting-ip
+    user: "${HUB_UID:-1000}:${HUB_GID:-1000}"
+    volumes:
+      - ${HUB_HOME}/data:/data
+    # This machine only, to look at it directly; everyone else comes through the tunnel.
+    ports:
+      - "127.0.0.1:${HUB_LOCAL_PORT:-4100}:4000"
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }
+
+  tunnel:
+    image: cloudflare/cloudflared:${CLOUDFLARED_VERSION:-2026.9.3}
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    user: "${HUB_UID:-1000}:${HUB_GID:-1000}"
+    volumes:
+      - ${HUB_HOME}/cloudflared:/etc/cloudflared:ro
+    depends_on:
+      hub:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }

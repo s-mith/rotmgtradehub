@@ -1,6 +1,6 @@
 # rotmgtradehub
 
-The hub for [rotmgtradenode](../rotmgtradenode) nodes: user accounts, the node
+The hub for [rotmgtradenode](https://github.com/s-mith/rotmgtradenode) nodes (live at [rotmg.trade](https://rotmg.trade)): user accounts, the node
 registry, the version feed, ban telemetry, and the offers nodes trade
 through (offers, rendezvous, receipts; nodes post and take them, the website
 has no offer board, only a page per offer whose link its owner shares, where
@@ -18,7 +18,12 @@ signing helpers are imported from there (`rotmgtradenode/shared/hubWire`).
 npm install
 GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... ADMIN_EMAILS=you@example.com npm run dev   # http://localhost:4000
 npm test
+npm run build && npm start   # production: one bundled file (dist/main.js) on plain node
 ```
+
+The settings can also go in a `.env` file in the working directory. The
+running hub at [rotmg.trade](https://rotmg.trade) is the Docker image (`Dockerfile`) behind a
+Cloudflare Tunnel; `deploy/README.md` says how it is set up and kept.
 
 People sign in with Google; the first sign-in creates the account, and the hub
 keeps the email address, a display name and Google's subject id. To get the
@@ -31,7 +36,11 @@ sits behind a reverse proxy; without it the hub trusts `X-Forwarded-Proto`
 and `X-Forwarded-Host`. Behind a proxy, also set `TRUST_PROXY` to the number
 of proxies in front of the hub (usually 1) so the per-address limits see
 each visitor's address; without it they use the connection's own address and
-ignore `X-Forwarded-For`, which a visitor could otherwise make up. A session
+ignore `X-Forwarded-For`, which a visitor could otherwise make up. A proxy
+that writes the visitor's address into a header of its own and overwrites it
+when a visitor sends it can be named instead with `CLIENT_IP_HEADER`
+(`cf-connecting-ip` behind Cloudflare, `fly-client-ip` on Fly.io); that is
+only safe when nothing reaches the hub except through that proxy. A session
 lasts 30 days from the last visit. There are no passwords: accounts exist only through
 Google or Discord sign-in (`createUser()` in `src/auth.ts` makes an empty
 account for tests and scripts, which the first sign-in with that email
@@ -49,7 +58,8 @@ A node joins an account with a **link code** from "my nodes → link a node"
 (eight characters, fifteen minutes, one use; up to three live at once),
 pasted into the node's console; no hub password ever reaches a node. An
 account may link 20 nodes; the operator can give one person more, or no
-limit, on the admin page.
+limit, on the admin page. A node is named when it links, and its owner can
+rename it on "my nodes" (1-40 characters); every page shows the new name.
 
 ## Communism
 
@@ -125,7 +135,10 @@ throwaway hub on port 4001 with made-up nodes, offers, communism accounts and
 items and a few requests, and `/preview/as/boss@x.test` signs you in without
 a password, for looking at the pages.
 
-Data: `./data/hub.db` (or `HUB_DB`). The admin page (`/admin`, for the
+Data: `./data/hub.db` (or `HUB_DB`; `DATA_DIR` moves the folder). The hub
+copies the database at start and every hour (`BACKUP_EVERY_MINUTES`, 0 for
+none) into `<DATA_DIR>/backups` (or `BACKUP_DIR`) and keeps two days of
+copies, then one a day for thirty days (`src/backup.ts`). The admin page (`/admin`, for the
 emails in `ADMIN_EMAILS`) publishes the version feed: minimum and latest node
 version, download URL, and the Realm builds confirmed to work with the latest
 node's codecs, lists disputed meetings (the two sides contradicted each
@@ -134,6 +147,17 @@ node (a frozen node posts and accepts nothing and its offers are hidden), and
 under People lifts a limit for one person: how many nodes they may link and
 how many trades in game they may start an hour. Sign-in callbacks, node
 linking and new Realm sign-in codes are rate-limited per address.
+
+The latest node version and the download follow the node repo's newest
+published GitHub release by themselves (`NODE_RELEASES_REPO`, default
+`s-mith/rotmgtradenode`, empty for none; checked at start and every
+`RELEASE_CHECK_MINUTES`, 10; `src/releases.ts`), so publishing a release is
+the only step; the admin page shows what was found and checks again on
+demand. `/download` is the link to share: it sends a visitor to the newest
+installer for their system (`/download/windows`, `/download/linux`), or to the
+admin page's download URL while no release is found, and the site's download
+links all point at it. The admin page's latest version and download URL count
+only while no release is found.
 
 The request queue (`/api/v1/guest-requests`) and communism
 (`/api/v1/communism/*`: publish accounts and items, the federated board,

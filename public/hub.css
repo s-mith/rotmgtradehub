@@ -28,6 +28,7 @@ code { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, mo
 .frame { padding: 24px 16px 0; }
 header.site { display: flex; align-items: center; gap: 12px 18px; flex-wrap: wrap; padding-bottom: 16px; margin-bottom: 24px; border-bottom: 1px solid var(--border); }
 .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--text); font-weight: 700; font-size: 26px; line-height: 1.2; }
+a.brand:hover { color: var(--text); }
 .brand img { display: block; image-rendering: auto; } /* the 112 px logo shrinks smoothly; pixelated would drop rows of its outline */
 /* The beta sash: pinned to the wordmark's top-right corner, turned 25° (the node's .title-beta). */
 .wordmark { position: relative; display: inline-block; padding-right: 4px; }
@@ -57,6 +58,10 @@ footer.site { display: flex; gap: 12px; flex-wrap: wrap; justify-content: space-
 @media (min-width: 720px) { .split { grid-template-columns: 1fr 1fr; } }
 details.panel summary { cursor: pointer; color: var(--muted); }
 tr:target td { background: rgba(212, 161, 59, 0.08); }
+/* a node's rename form, folded under its name on /me */
+details.rename summary { cursor: pointer; color: var(--muted); font-size: 12px; margin-top: 2px; }
+details.rename form { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+details.rename input { flex: 1 1 140px; min-width: 0; padding: 4px 8px; font-size: 13px; }
 
 /* settings on /me: a label, the control, one line of hint under it */
 .settings { display: grid; gap: 18px; }
@@ -83,6 +88,12 @@ details.panel[open] summary { margin-bottom: 8px; }
 .hero { padding: 36px 0 12px; }
 .hero h1 { font-size: 32px; line-height: 1.15; max-width: 620px; }
 .hero p.lead { font-size: 16px; color: var(--muted); max-width: 620px; }
+/* a page of running text: /privacy */
+.prose { max-width: 720px; }
+.prose p.lead { font-size: 16px; color: var(--muted); }
+.prose h2 { margin-top: 28px; }
+.prose ul { padding-left: 20px; }
+.prose li { margin: 6px 0; }
 .stats { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin: 16px 0; }
 .stat { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
 .stat b { display: block; font-size: 22px; }
@@ -104,6 +115,7 @@ label.field > input, label.field > select { font-size: 14px; color: var(--text);
 button, .button { background: var(--accent); color: #000; border: 0; font-weight: 600; cursor: pointer; display: inline-block; padding: 8px 14px; border-radius: 6px; line-height: 1.4; }
 button:hover, .button:hover { background: var(--accent-hot); color: #000; }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
+.button.disabled, .button.disabled:hover { opacity: 0.45; cursor: not-allowed; background: transparent; color: var(--muted); }
 button.quiet, .button.quiet { background: transparent; color: var(--muted); border: 1px solid var(--border); }
 button.quiet:hover, .button.quiet:hover { color: var(--text); background: var(--panel-2); }
 button.danger { background: transparent; color: var(--bad); border: 1px solid rgba(217, 102, 102, 0.5); }

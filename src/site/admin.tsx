@@ -5,10 +5,11 @@ import type { FC } from "hono/jsx";
 import type { Hono } from "hono";
 import { isAdmin } from "../auth";
 import { communismOperatorView } from "../communism";
-import { getSettings, setSettings, type HubSettings } from "../db";
+import { setSettings, storedSettings, type HubSettings } from "../db";
 import { NODE_ONLINE_MS, allNodes, type NodeView } from "../nodes";
 import { freezeNode, operatorView, unfreezeNode } from "../offers";
 import { loginNodeState } from "../realmLogin";
+import { checkRelease, releasesRepo } from "../releases";
 import { DEFAULT_NODES_PER_ACCOUNT, DEFAULT_PLAYER_STARTS_PER_HOUR, findPeople, parseLimitField, setPersonLimits, type PersonRow } from "../personLimits";
 import type { Db } from "../db";
 import { hubStats, type HubStats } from "../stats";
@@ -44,7 +45,22 @@ const Admin: FC<{ settings: HubSettings; bans: BanSummary; stats: HubStats; node
     </div>
 
     <h2>Version feed</h2>
-    <p class="muted">What every node reads at <code>/api/v1/version</code>. List a Realm build under known builds only after confirming the latest node's codecs on it; nodes then open their login gate for it without a canary. The download URL is what the front page and new accounts link to.</p>
+    <p class="muted">What every node reads at <code>/api/v1/version</code>. List a Realm build under known builds only after confirming the latest node's codecs on it; nodes then open their login gate for it without a canary. The front page and new accounts link to <a href="/download">/download</a>, which hands out the newest release's installer, or the download URL below while no release is found.</p>
+    <div class="panel">
+      <b>Newest release on GitHub</b>{releasesRepo() ? <> (<code>{releasesRepo()}</code>)</> : null}:{" "}
+      {settings.nodeRelease ? (
+        <>
+          <a href={settings.nodeRelease.page}>v{settings.nodeRelease.version}</a> · Windows installer {settings.nodeRelease.windows ? "✓" : <span class="bad">missing</span>} · Linux AppImage {settings.nodeRelease.linux ? "✓" : <span class="bad">missing</span>} · published <When at={settings.nodeRelease.publishedAt || null} />
+        </>
+      ) : (
+        <span class="muted">none found</span>
+      )}
+      <div class="row">
+        <span class="muted small">checked <When at={settings.releaseCheckedAt || null} never="not yet" />{settings.releaseNote ? <> · {settings.releaseNote}</> : null}</span>
+        <form method="post" action="/admin/release-check"><button class="quiet small" type="submit">Check now</button></form>
+      </div>
+      <p class="muted small">While a release is found, it is the latest node version and its installer is the download; the latest node version and download URL below count only while none is.</p>
+    </div>
     <form method="post" action="/admin/settings" class="panel">
       <div class="row">
         <label class="field">min node version<input name="minNodeVersion" value={settings.minNodeVersion} /></label>
@@ -222,7 +238,7 @@ export function registerAdmin(app: Hono, site: Site): void {
     const personQuery = (c.req.query("person") ?? "").trim().slice(0, 64);
     return c.html(
       <Layout title="admin" frame={site.frame(user, "admin")}>
-        <Admin settings={getSettings(db)} bans={summarize(db)} stats={hubStats(db)} nodes={allNodes(db)} board={operatorView(db)} communism={communismOperatorView(db)} login={loginView(db)} people={personQuery ? findPeople(db, personQuery) : null} personQuery={personQuery} now={Date.now()} />
+        <Admin settings={storedSettings(db)} bans={summarize(db)} stats={hubStats(db)} nodes={allNodes(db)} board={operatorView(db)} communism={communismOperatorView(db)} login={loginView(db)} people={personQuery ? findPeople(db, personQuery) : null} personQuery={personQuery} now={Date.now()} />
       </Layout>,
     );
   });
@@ -254,6 +270,11 @@ export function registerAdmin(app: Hono, site: Site): void {
     const id = String(f.nodeId ?? "").trim();
     if (id && !allNodes(db).some((n) => n.id === id)) return c.text("no such node", 404);
     setSettings(db, { loginNodeId: id });
+    return c.redirect("/admin");
+  });
+  app.post("/admin/release-check", async (c) => {
+    if (!isAdmin(site.me(c))) return c.text("not for you", 403);
+    await checkRelease(db);
     return c.redirect("/admin");
   });
   app.post("/admin/settings", async (c) => {
