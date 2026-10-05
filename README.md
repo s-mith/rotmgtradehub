@@ -1,6 +1,6 @@
 # rotmgtradehub
 
-The hub for [rotmgtradenode](../rotmgtradenode) nodes (live at [rotmg.trade](https://rotmg.trade)): user accounts, the node
+The hub for [rotmgtradenode](https://github.com/s-mith/rotmgtradenode) nodes (live at [rotmg.trade](https://rotmg.trade)): user accounts, the node
 registry, the version feed, ban telemetry, and the offers nodes trade
 through (offers, rendezvous, receipts; nodes post and take them, the website
 has no offer board, only a page per offer whose link its owner shares, where
