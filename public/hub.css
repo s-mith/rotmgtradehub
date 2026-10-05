@@ -57,6 +57,10 @@ footer.site { display: flex; gap: 12px; flex-wrap: wrap; justify-content: space-
 @media (min-width: 720px) { .split { grid-template-columns: 1fr 1fr; } }
 details.panel summary { cursor: pointer; color: var(--muted); }
 tr:target td { background: rgba(212, 161, 59, 0.08); }
+/* a node's rename form, folded under its name on /me */
+details.rename summary { cursor: pointer; color: var(--muted); font-size: 12px; margin-top: 2px; }
+details.rename form { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+details.rename input { flex: 1 1 140px; min-width: 0; padding: 4px 8px; font-size: 13px; }
 
 /* settings on /me: a label, the control, one line of hint under it */
 .settings { display: grid; gap: 18px; }

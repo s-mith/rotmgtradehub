@@ -125,6 +125,20 @@ export function unlinkNode(db: Db, id: string, userId?: number, now = Date.now()
   return true;
 }
 
+/**
+ * A new name for a node, from its owner's page: 1-40 characters, as at linking,
+ * with runs of spaces made one. Every page reads the name from the node's row,
+ * so offers, meetings and the communism board show the new one at once.
+ */
+export function renameNode(db: Db, id: string, userId: number, raw: string): { ok: true; name: string } | { ok: false; error: string } {
+  const node = linkedNodeById(db, id);
+  if (!node || node.user_id !== userId) return { ok: false, error: "That node is not one of yours." };
+  const name = raw.replace(/\s+/g, " ").trim();
+  if (!name || name.length > 40) return { ok: false, error: "A node's name is 1-40 characters." };
+  db.prepare("UPDATE nodes SET name = ? WHERE id = ?").run(name, id);
+  return { ok: true, name };
+}
+
 /** The self-report, checked field by field; anything odd drops the whole thing rather than half of it. */
 function parseHeartbeatStatus(raw: unknown): NodeStatusWire | null {
   if (!raw || typeof raw !== "object") return null;

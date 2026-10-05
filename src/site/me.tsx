@@ -11,7 +11,7 @@ import { itemName } from "../catalog";
 import { playerMeetingsOf, type PlayerMeetingView } from "../players";
 import { getSettings, type HubSettings } from "../db";
 import { collapse, meetingsFor, type MeetingView } from "../offers";
-import { NODE_ONLINE_MS, nodesOf, unlinkNode, type NodeView } from "../nodes";
+import { NODE_ONLINE_MS, nodesOf, renameNode, unlinkNode, type NodeView } from "../nodes";
 import { recentRequestsFor, type RequestView } from "../requests";
 import { Badge, Flash, Layout, Qty, When, halfName, meetingWords, requestWords } from "./layout";
 import type { Site } from "./context";
@@ -90,7 +90,16 @@ const Nodes: FC<{ nodes: NodeView[]; settings: HubSettings; now: number }> = ({ 
         const problems = nodeProblems(node, settings);
         return (
           <tr>
-            <td data-th="node"><b>{node.name}</b></td>
+            <td data-th="node">
+              <b>{node.name}</b>
+              <details class="rename">
+                <summary>rename</summary>
+                <form method="post" action={`/me/nodes/${node.id}/rename`}>
+                  <input name="name" value={node.name} maxlength={40} required aria-label={`New name for ${node.name}`} />
+                  <button class="small" type="submit">Save</button>
+                </form>
+              </details>
+            </td>
             <td data-th="status" class="nowrap">{online ? <Badge tone="good">online</Badge> : <div><Badge>offline</Badge><div class="muted small">seen <When at={node.last_seen_at} /></div></div>}</td>
             <td data-th="bots online">{online ? node.online : 0}/{node.bots}</td>
             <td data-th="proxies">{node.status ? node.status.proxies : <span class="muted">—</span>}</td>
@@ -211,10 +220,10 @@ const OpenOffers: FC<{ offers: OpenOffer[] }> = ({ offers }) => (
   </table>
 );
 
-const Me: FC<{ user: User; nodes: NodeView[]; meetings: MeetingView[]; requests: RequestView[]; trades: PlayerMeetingView[]; offers: OpenOffer[]; settings: HubSettings; mine: SettingsView; linkCode?: LinkCode; now: number; ok?: string; settingsMsg: { ok?: string; error?: string } }> = ({ user, nodes, meetings, requests, trades, offers, settings, mine, linkCode, now, ok, settingsMsg }) => (
+const Me: FC<{ user: User; nodes: NodeView[]; meetings: MeetingView[]; requests: RequestView[]; trades: PlayerMeetingView[]; offers: OpenOffer[]; settings: HubSettings; mine: SettingsView; linkCode?: LinkCode; now: number; ok?: string; error?: string; settingsMsg: { ok?: string; error?: string } }> = ({ user, nodes, meetings, requests, trades, offers, settings, mine, linkCode, now, ok, error, settingsMsg }) => (
   <>
     <h1>My nodes</h1>
-    <Flash ok={ok} />
+    <Flash ok={ok} error={error} />
     {nodes.length === 0 ? (
       <GetStarted settings={settings} linkCode={linkCode} />
     ) : (
@@ -259,7 +268,7 @@ export function registerMe(app: Hono, site: Site): void {
     const requests = recentRequestsFor(site.db, user.id);
     return c.html(
       <Layout title="my nodes" frame={site.frame(user, "me")}>
-        <Me user={user} nodes={nodesOf(site.db, user.id)} meetings={meetingsFor(site.db, user.id).filter((m) => m.state === "meet" && m.kind !== "player")} requests={requests} trades={playerMeetingsOf(site.db, user.id)} offers={openOffersOf(site.db, user.id)} settings={getSettings(site.db)} mine={settingsView(site.db, user.id)} linkCode={linkCode} now={Date.now()} ok={linkCode ? undefined : c.req.query("ok")} settingsMsg={linkCode ? {} : { ok: c.req.query("settings_ok"), error: c.req.query("settings_error") }} />
+        <Me user={user} nodes={nodesOf(site.db, user.id)} meetings={meetingsFor(site.db, user.id).filter((m) => m.state === "meet" && m.kind !== "player")} requests={requests} trades={playerMeetingsOf(site.db, user.id)} offers={openOffersOf(site.db, user.id)} settings={getSettings(site.db)} mine={settingsView(site.db, user.id)} linkCode={linkCode} now={Date.now()} ok={linkCode ? undefined : c.req.query("ok")} error={linkCode ? undefined : c.req.query("error")} settingsMsg={linkCode ? {} : { ok: c.req.query("settings_ok"), error: c.req.query("settings_error") }} />
       </Layout>,
     );
   };
@@ -280,6 +289,13 @@ export function registerMe(app: Hono, site: Site): void {
     if (!user) return c.json({ error: "sign in" }, 401);
     const nodes = nodesOf(site.db, user.id);
     return c.json({ count: nodes.length, nodes: nodes.map((n) => ({ id: n.id, name: n.name, lastSeenAt: n.last_seen_at })) }, 200, { "cache-control": "no-store" });
+  });
+  app.post("/me/nodes/:id/rename", async (c) => {
+    const user = site.me(c);
+    if (!user) return c.redirect("/");
+    const f = await c.req.parseBody();
+    const r = renameNode(site.db, c.req.param("id"), user.id, String(f.name ?? ""));
+    return c.redirect(`/me?${r.ok ? `ok=${encodeURIComponent(`Renamed the node to ${r.name}.`)}` : `error=${encodeURIComponent(r.error)}`}`);
   });
   app.post("/me/nodes/:id/unlink", (c) => {
     const user = site.me(c);

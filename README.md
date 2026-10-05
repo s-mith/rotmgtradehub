@@ -58,7 +58,8 @@ A node joins an account with a **link code** from "my nodes → link a node"
 (eight characters, fifteen minutes, one use; up to three live at once),
 pasted into the node's console; no hub password ever reaches a node. An
 account may link 20 nodes; the operator can give one person more, or no
-limit, on the admin page.
+limit, on the admin page. A node is named when it links, and its owner can
+rename it on "my nodes" (1-40 characters); every page shows the new name.
 
 ## Communism
 
