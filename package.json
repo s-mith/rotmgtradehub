@@ -2,6 +2,11 @@
   "name": "rotmgtradehub",
   "version": "0.1.0",
   "private": true,
+  "homepage": "https://rotmg.trade",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/s-mith/rotmgtradehub.git"
+  },
   "description": "The rotmgtradenode hub: accounts, node registry, version feed, ban telemetry. No bots, no items, no credentials, no money.",
   "type": "module",
   "scripts": {

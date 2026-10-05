@@ -1,6 +1,6 @@
 # rotmgtradehub
 
-The hub for [rotmgtradenode](../rotmgtradenode) nodes: user accounts, the node
+The hub for [rotmgtradenode](../rotmgtradenode) nodes (live at [rotmg.trade](https://rotmg.trade)): user accounts, the node
 registry, the version feed, ban telemetry, and the offers nodes trade
 through (offers, rendezvous, receipts; nodes post and take them, the website
 has no offer board, only a page per offer whose link its owner shares, where
@@ -22,7 +22,7 @@ npm run build && npm start   # production: one bundled file (dist/main.js) on pl
 ```
 
 The settings can also go in a `.env` file in the working directory. The
-running hub at rotmg.trade is the Docker image (`Dockerfile`) behind a
+running hub at [rotmg.trade](https://rotmg.trade) is the Docker image (`Dockerfile`) behind a
 Cloudflare Tunnel; `deploy/README.md` says how it is set up and kept.
 
 People sign in with Google; the first sign-in creates the account, and the hub
