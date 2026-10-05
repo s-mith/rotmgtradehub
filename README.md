@@ -148,6 +148,17 @@ under People lifts a limit for one person: how many nodes they may link and
 how many trades in game they may start an hour. Sign-in callbacks, node
 linking and new Realm sign-in codes are rate-limited per address.
 
+The latest node version and the download follow the node repo's newest
+published GitHub release by themselves (`NODE_RELEASES_REPO`, default
+`s-mith/rotmgtradenode`, empty for none; checked at start and every
+`RELEASE_CHECK_MINUTES`, 10; `src/releases.ts`), so publishing a release is
+the only step; the admin page shows what was found and checks again on
+demand. `/download` is the link to share: it sends a visitor to the newest
+installer for their system (`/download/windows`, `/download/linux`), or to the
+admin page's download URL while no release is found, and the site's download
+links all point at it. The admin page's latest version and download URL count
+only while no release is found.
+
 The request queue (`/api/v1/guest-requests`) and communism
 (`/api/v1/communism/*`: publish accounts and items, the federated board,
 node-to-node take and give) are further signed endpoint families. A database

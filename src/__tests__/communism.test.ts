@@ -73,6 +73,42 @@ async function loginCookie(email: string): Promise<string> {
 }
 
 describe("communism", () => {
+  it("a database from before keeps its communism accounts, now keyed per side", () => {
+    const file = path.join(os.tmpdir(), `hub-communism-accounts-${process.pid}-${Date.now()}.db`);
+    const old = openDb(file);
+    old.exec(`DROP TABLE communism_accounts;
+      CREATE TABLE communism_accounts (node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, ign TEXT NOT NULL, seasonal INTEGER NOT NULL, slots INTEGER NOT NULL, free INTEGER NOT NULL, online INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (node_id, ign));
+      INSERT INTO users (id, email, display_name, created_at) VALUES (1, 'a@x.test', 'Alice', 1);
+      INSERT INTO nodes (id, user_id, name, public_key, version, linked_at) VALUES ('n_old', 1, 'desk', '', '0.1.0', 1);
+      INSERT INTO communism_accounts VALUES ('n_old', 'AliceBot', 0, 632, 278, 0, 5);`);
+    old.close();
+    const upgraded = openDb(file);
+    try {
+      const key = (upgraded.pragma("table_info(communism_accounts)") as { name: string; pk: number }[]).filter((c) => c.pk > 0).sort((x, y) => x.pk - y.pk).map((c) => c.name);
+      expect(key).toEqual(["node_id", "ign", "seasonal"]);
+      expect(upgraded.prepare("SELECT ign, seasonal, slots, free FROM communism_accounts").all()).toEqual([{ ign: "AliceBot", seasonal: 0, slots: 632, free: 278 }]);
+      upgraded.prepare("INSERT INTO communism_accounts VALUES ('n_old', 'AliceBot', 1, 80, 80, 0, 6)").run();
+      expect((upgraded.prepare("SELECT COUNT(*) AS n FROM communism_accounts").get() as { n: number }).n).toBe(2);
+    } finally {
+      upgraded.close();
+      for (const f of [file, `${file}-wal`, `${file}-shm`]) fs.rmSync(f, { force: true });
+    }
+  });
+
+  it("an account with characters on both sides of the split is room on each, counted once", async () => {
+    const a = await linked("a@x.test", "Alice");
+    const b = await linked("b@x.test", "Bob");
+    const both = [account("AliceBot", false, 632, 278, true), account("AliceBot", true, 80, 80, false)];
+    expect((await a.call("POST", "/api/v1/communism/publish", publish([], both))).body).toMatchObject({ ok: true, accounts: 2 });
+    const nodes = (await b.call("GET", "/api/v1/communism")).body.nodes as CommunismNodeWire[];
+    expect(nodes.find((n) => n.nodeId === a.nodeId)).toMatchObject({ seasonal: { accounts: 1, slots: 80, free: 80 }, nonseasonal: { accounts: 1, slots: 632, free: 278 } });
+    expect((await a.call("GET", "/api/v1/communism/mine")).body.status).toEqual({ accounts: 1, slots: 712, free: 358, listed: 0 });
+    expect(communismOperatorView(db)).toMatchObject({ accounts: 1, slots: 712 });
+    // Once per side: the same side twice is refused.
+    const twice = await a.call("POST", "/api/v1/communism/publish", publish([], [account("AliceBot", true), account("AliceBot", true)]));
+    expect(twice).toMatchObject({ status: 400, body: { error: "accounts: duplicate AliceBot (seasonal)" } });
+  });
+
   it("publish lists accounts and items every online node sees, newest first with mine and node set, owners and other nodes' bots unsaid, filtered by half; the board's nodes carry room per half; a republish replaces and keeps listed_at; shapes are checked", async () => {
     const a = await linked("a@x.test", "Alice");
     const b = await linked("b@x.test", "Bob");
@@ -115,7 +151,8 @@ describe("communism", () => {
     expect(await bad([], [{ ign: "X", seasonal: false, slots: 8, free: 9, online: true }])).toBe(400);
     expect(await bad([], [{ ign: "X", seasonal: false, slots: -1, free: 0, online: true }])).toBe(400);
     expect(await bad([], [{ ign: "X", seasonal: "no", slots: 8, free: 8, online: true }])).toBe(400);
-    expect(await bad([], [account("X", false), account("X", true)])).toBe(400);
+    // The same account twice on one side (both sides is room on each: the test above).
+    expect(await bad([], [account("X", true), account("X", true)])).toBe(400);
     expect((await a.call("GET", "/api/v1/communism/mine")).body.status).toEqual({ accounts: 3, slots: 32, free: 30, listed: 2 });
 
     // A republish replaces the listing; an item that stays keeps its listed_at (the board is ordered by it).

@@ -94,13 +94,15 @@ function parseAccounts(raw: unknown): { accounts: CommunismAccountWire[] } | Ref
   if (raw === undefined) return { accounts: [] };
   if (!Array.isArray(raw)) return refuse(400, "accounts: must be a list");
   const accounts: CommunismAccountWire[] = [];
-  const igns = new Set<string>();
+  // Each account once per side: one with characters on both sides of the split is room on each.
+  const seen = new Set<string>();
   for (const a of raw as Partial<CommunismAccountWire>[]) {
     if (!a || typeof a !== "object") return refuse(400, "accounts: bad account");
     if (typeof a.ign !== "string" || !IGN_RE.test(a.ign)) return refuse(400, "accounts: ign: letters only, 1..32");
-    if (igns.has(a.ign)) return refuse(400, `accounts: duplicate ${a.ign}`);
-    igns.add(a.ign);
     if (typeof a.seasonal !== "boolean") return refuse(400, "accounts: seasonal must be a boolean");
+    const key = `${a.ign}|${a.seasonal}`;
+    if (seen.has(key)) return refuse(400, `accounts: duplicate ${a.ign} (${a.seasonal ? "seasonal" : "non-seasonal"})`);
+    seen.add(key);
     if (!isInt(a.slots, 0, Number.MAX_SAFE_INTEGER)) return refuse(400, "accounts: slots must be a whole number");
     if (!isInt(a.free, 0, a.slots)) return refuse(400, "accounts: free must be 0..slots");
     if (typeof a.online !== "boolean") return refuse(400, "accounts: online must be a boolean");
@@ -253,7 +255,7 @@ export function listMine(db: Db, node: NodeRow): { items: CommunismItemWire[]; a
 }
 
 export function communismStatus(db: Db, node: NodeRow): CommunismStatusWire {
-  const a = db.prepare(`SELECT COUNT(*) AS accounts, COALESCE(SUM(slots), 0) AS slots, COALESCE(SUM(${EFFECTIVE_FREE}), 0) AS free FROM communism_accounts a WHERE node_id = ?`).get(node.id) as { accounts: number; slots: number; free: number };
+  const a = db.prepare(`SELECT COUNT(DISTINCT ign) AS accounts, COALESCE(SUM(slots), 0) AS slots, COALESCE(SUM(${EFFECTIVE_FREE}), 0) AS free FROM communism_accounts a WHERE node_id = ?`).get(node.id) as { accounts: number; slots: number; free: number };
   return { accounts: a.accounts, slots: a.slots, free: a.free, listed: listedBy(db, node.id) };
 }
 
@@ -410,6 +412,7 @@ export interface CommunismTotals {
 
 export function communismOperatorView(db: Db): CommunismTotals {
   const listed = db.prepare("SELECT COUNT(*) AS n, COUNT(DISTINCT node_id) AS c FROM communism_items").get() as { n: number; c: number };
-  const a = db.prepare("SELECT COUNT(*) AS accounts, COALESCE(SUM(slots), 0) AS slots, COALESCE(SUM(free), 0) AS free FROM communism_accounts").get() as { accounts: number; slots: number; free: number };
+  // An account on both sides of the split is one account, its room on each side counted.
+  const a = db.prepare("SELECT COUNT(DISTINCT node_id || '|' || ign) AS accounts, COALESCE(SUM(slots), 0) AS slots, COALESCE(SUM(free), 0) AS free FROM communism_accounts").get() as { accounts: number; slots: number; free: number };
   return { listed: listed.n, contributors: listed.c, handovers: (db.prepare("SELECT COUNT(*) AS n FROM rendezvous WHERE kind = 'communism' AND state = 'done' AND counted = 1").get() as { n: number }).n, ...a };
 }

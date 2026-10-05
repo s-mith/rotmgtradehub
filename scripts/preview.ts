@@ -44,10 +44,7 @@ const o1 = createOffer(db, aliceNode, { botIgn: "AliceBot", seasonal: false, ser
 const o2 = createOffer(db, bossNode, { botIgn: "Furrygay", seasonal: false, server: "USSouth3", give: [item("b1", "ubatk"), item("b2", "cgc", [107])], want: [{ itemId: "gplife", qty: 3, slotsMin: 0, slotsExact: null, enchants: [] }, { itemId: "sep", qty: 1, slotsMin: 0, slotsExact: null, enchants: [] }] });
 const o3 = createOffer(db, bobNode, { botIgn: "BobBot", seasonal: false, server: "USEast", give: [item("c1", "plife"), item("c2", "plife")], want: [{ itemId: "pmana", qty: 2, slotsMin: 0, slotsExact: null, enchants: [] }] });
 for (const o of [o1, o2, o3]) if (!o.ok) throw new Error(`offer: ${o.error}`);
-// Bob accepts Alice's: a meeting under way.
-const acc = acceptOffer(db, bobNode, o1.offer.id, { botIgn: "BobBot", items: [item("c9", "rod", [23, 63])] });
-if (!acc.ok) throw new Error(acc.error);
-// A swap that finished yesterday, so the history has something to say.
+// A swap that finished yesterday, so the history has something to say (first: Bob's node takes one offer at a time).
 const past = createOffer(db, aliceNode, { botIgn: "AliceBot", seasonal: false, server: "USWest4", give: [item("h1", "dbow", [283])], want: [{ itemId: "plife", qty: 2, slotsMin: 0, slotsExact: null, enchants: [] }] }, Date.now() - 90_000_000);
 if (!past.ok) throw new Error(past.error);
 const pastRv = acceptOffer(db, bobNode, past.offer.id, { botIgn: "BobBot", items: [item("h2", "plife"), item("h3", "plife")] }, Date.now() - 89_000_000);
@@ -55,6 +52,9 @@ if (!pastRv.ok) throw new Error(pastRv.error);
 const rc = (gave: { itemId: string; qty: number }[], got: { itemId: string; qty: number }[], partnerIgn: string) => ({ window: 0, ok: true, gave, gaveRefs: [], got, partnerIgn, at: Date.now() - 88_000_000 });
 submitReceipt(db, aliceNode, pastRv.rendezvous.id, rc([{ itemId: "dbow", qty: 1 }], [{ itemId: "plife", qty: 2 }], "BobBot"), Date.now() - 88_000_000);
 submitReceipt(db, bobNode, pastRv.rendezvous.id, rc([{ itemId: "plife", qty: 2 }], [{ itemId: "dbow", qty: 1 }], "AliceBot"), Date.now() - 88_000_000);
+// Bob accepts Alice's: a meeting under way.
+const acc = acceptOffer(db, bobNode, o1.offer.id, { botIgn: "BobBot", items: [item("c9", "rod", [23, 63])] });
+if (!acc.ok) throw new Error(acc.error);
 // More offers, for the nodes to browse.
 for (const [node, ign, give, want] of [
   [bobNode, "BobBot", [item("m1", "gpdef"), item("m2", "gpdef")], [{ itemId: "gplife", qty: 1 }]],

@@ -49,7 +49,7 @@ const GetStarted: FC<{ settings: HubSettings; linkCode?: LinkCode }> = ({ settin
               <a href={settings.downloadUrl}>rotmgtradenode{settings.latestNodeVersion ? ` ${settings.latestNodeVersion}` : ""}</a>. The app is not signed yet: if Windows says
               "Windows protected your PC", click More info, then Run anyway.
             </>
-          ) : "Ask the site operator where to get it."}
+          ) : "Coming soon: the first release is not out yet."}
         </span>
       </li>
       <li>

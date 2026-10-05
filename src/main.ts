@@ -3,10 +3,12 @@ import { serve } from "@hono/node-server";
 import { openDb } from "./db";
 import { createApp } from "./app";
 import { startBackups } from "./backup";
+import { startReleaseChecks } from "./releases";
 
 const db = openDb();
 const app = createApp(db);
 startBackups(db);
+startReleaseChecks(db);
 const port = Number(process.env.PORT ?? 4000);
 serve({ fetch: app.fetch, port, hostname: process.env.HOST ?? "0.0.0.0" }, (info) => {
   console.log(`[hub] listening on http://${info.address}:${info.port}${process.env.ADMIN_EMAILS ? "" : " (ADMIN_EMAILS unset: no admin)"}`);

@@ -17,7 +17,8 @@ import { communismNodes, communismStatus, giveCommunism, listCommunism, listMine
 import { acceptReports } from "./telemetry";
 import { rateLimit } from "./ratelimit";
 import { registerStatic } from "./static";
-import { Site } from "./site/context";
+import { registerDownload } from "./releases";
+import { Site, publicOrigin } from "./site/context";
 import { registerAuth } from "./site/auth";
 import { registerHome } from "./site/home";
 import { registerMe } from "./site/me";
@@ -29,6 +30,7 @@ import { registerDiscordAuth } from "./site/discordAuth";
 import { registerMeetings } from "./site/meetings";
 import { registerRealmAuth } from "./site/realm";
 import { registerOffers } from "./site/offers";
+import { registerPrivacy } from "./site/privacy";
 
 export interface AppOptions {
   /** Google sign-in; undefined reads GOOGLE_CLIENT_ID/SECRET from the environment, null turns it off. */
@@ -45,7 +47,9 @@ export function createApp(db: Db, opts: AppOptions = {}): Hono {
   // ---- API for nodes -------------------------------------------------------
   app.get("/api/v1/version", (c) => {
     const s = getSettings(db);
-    const v: VersionInfo = { minNodeVersion: s.minNodeVersion, latestNodeVersion: s.latestNodeVersion, downloadUrl: s.downloadUrl, build: { gameVersion: s.gameVersion, knownBuilds: s.knownBuilds, updatedAt: s.buildUpdatedAt } };
+    // The download is /download on this hub: whole, so a node can open it.
+    const downloadUrl = s.downloadUrl.startsWith("/") ? `${publicOrigin(c)}${s.downloadUrl}` : s.downloadUrl;
+    const v: VersionInfo = { minNodeVersion: s.minNodeVersion, latestNodeVersion: s.latestNodeVersion, downloadUrl, build: { gameVersion: s.gameVersion, knownBuilds: s.knownBuilds, updatedAt: s.buildUpdatedAt } };
     return c.json(v, 200, { "cache-control": "public, max-age=60" });
   });
 
@@ -231,6 +235,7 @@ export function createApp(db: Db, opts: AppOptions = {}): Hono {
   // ---- website ---------------------------------------------------------------
   const site = new Site(db, google, discord);
   registerStatic(app);
+  registerDownload(app, db);
   registerAuth(app, site);
   registerHome(app, site);
   registerMe(app, site);
@@ -242,5 +247,6 @@ export function createApp(db: Db, opts: AppOptions = {}): Hono {
   registerRealmAuth(app, site);
   registerMeetings(app, site);
   registerOffers(app, site);
+  registerPrivacy(app, site);
   return app;
 }

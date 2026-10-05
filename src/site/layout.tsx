@@ -42,15 +42,15 @@ export const Layout: FC<PropsWithChildren<{ title: string; frame?: Frame; refres
       <body>
         <div class="frame">
           <header class="site">
-            {/* The name, not a link: the tabs below are the way around. */}
-            <div class="brand">
+            {/* The logo and name lead back to the front page. */}
+            <a class="brand" href="/" title="rotmg trade home">
               <img src={staticUrl("logo.png")} alt="" width={48} height={48} />
               <span class="wordmark">
                 rotmg trade
                 {/* The beta sash across the wordmark's corner, as on the node. */}
                 <span class="beta">beta</span>
               </span>
-            </div>
+            </a>
             <div class="who">
               {user ? (
                 <>
@@ -73,7 +73,7 @@ export const Layout: FC<PropsWithChildren<{ title: string; frame?: Frame; refres
         <main>{children}</main>
         <footer class="site">
           <span>rotmg trade holds accounts, node keys and receipts. Items, credentials and Realm traffic stay on players' own computers.</span>
-          <span class="muted">open source · MIT</span>
+          <span class="muted"><a href="/privacy">privacy</a> · open source · MIT</span>
         </footer>
         <script src={staticUrl("hub.js")} defer></script>
       </body>

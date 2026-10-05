@@ -72,6 +72,22 @@ const USERS_COLUMNS = `
       ign TEXT,
       ign_verified_at INTEGER`;
 
+/**
+ * A node's communism accounts, one row per account and side of the seasonal
+ * split: an account with characters on both sides (advanced management) is
+ * room on each (2026-10-05). Shared by CREATE TABLE and the rebuild that
+ * moved the key from (node_id, ign).
+ */
+const COMMUNISM_ACCOUNTS_COLUMNS = `
+      node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+      ign TEXT NOT NULL,
+      seasonal INTEGER NOT NULL,
+      slots INTEGER NOT NULL,
+      free INTEGER NOT NULL,
+      online INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (node_id, ign, seasonal)`;
+
 export function openDb(file = process.env.HUB_DB || path.join(process.env.DATA_DIR || "./data", "hub.db")): Db {
   if (file !== ":memory:") fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new Database(file);
@@ -192,15 +208,7 @@ export function openDb(file = process.env.HUB_DB || path.join(process.env.DATA_D
     CREATE INDEX IF NOT EXISTS guest_requests_state ON guest_requests (node_id, state, created_at);
     CREATE INDEX IF NOT EXISTS guest_requests_user ON guest_requests (user_id, node_id, created_at);
     -- Communism (docs/hub-protocol.md): the accounts each node set aside for it, and what they hold. Items stay on those bots.
-    CREATE TABLE IF NOT EXISTS communism_accounts (
-      node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-      ign TEXT NOT NULL,
-      seasonal INTEGER NOT NULL,
-      slots INTEGER NOT NULL,
-      free INTEGER NOT NULL,
-      online INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      PRIMARY KEY (node_id, ign)
+    CREATE TABLE IF NOT EXISTS communism_accounts (${COMMUNISM_ACCOUNTS_COLUMNS}
     );
     CREATE TABLE IF NOT EXISTS communism_items (
       node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
@@ -380,6 +388,16 @@ export function openDb(file = process.env.HUB_DB || path.join(process.env.DATA_D
       db.pragma("foreign_keys = ON");
     }
   }
+  // Communism accounts became one row per side (2026-10-05): a table keyed by (node_id, ign) is rebuilt with the side in its key.
+  const caCols = db.pragma("table_info(communism_accounts)") as { name: string; pk: number }[];
+  if (caCols.some((c) => c.name === "seasonal" && c.pk === 0)) {
+    db.transaction(() => {
+      db.exec(`CREATE TABLE communism_accounts_new (${COMMUNISM_ACCOUNTS_COLUMNS});
+        INSERT INTO communism_accounts_new (node_id, ign, seasonal, slots, free, online, updated_at) SELECT node_id, ign, seasonal, slots, free, online, updated_at FROM communism_accounts;
+        DROP TABLE communism_accounts;
+        ALTER TABLE communism_accounts_new RENAME TO communism_accounts;`);
+    })();
+  }
   // Phase 4: what a rendezvous is for, and for a communism hand-over, which listed item (guarded like the columns above).
   const rvNow = new Set((db.pragma("table_info(rendezvous)") as { name: string }[]).map((c) => c.name));
   if (!rvNow.has("kind")) db.exec("ALTER TABLE rendezvous ADD COLUMN kind TEXT NOT NULL DEFAULT 'swap'");
@@ -430,6 +448,18 @@ export function openDb(file = process.env.HUB_DB || path.join(process.env.DATA_D
   return db;
 }
 
+/** The newest published node release on GitHub (src/releases.ts). */
+export interface NodeRelease {
+  /** The tag without its v: "0.1.0". */
+  version: string;
+  /** The release's page on GitHub. */
+  page: string;
+  /** The Windows installer and the Linux AppImage, when the release has them. */
+  windows: string | null;
+  linux: string | null;
+  publishedAt: number;
+}
+
 export interface HubSettings {
   minNodeVersion: string;
   latestNodeVersion: string;
@@ -440,12 +470,29 @@ export interface HubSettings {
   buildUpdatedAt: number;
   /** The node that signs people in with a Realm character (src/realmLogin.ts): its login desk takes the whispered codes. "" = none. */
   loginNodeId: string;
+  /** The newest node release found on GitHub, when its last check met one, and when and how that check went. */
+  nodeRelease: NodeRelease | null;
+  releaseCheckedAt: number;
+  releaseNote: string;
 }
 
 /** A settings row from before (communism daily cap) is simply ignored. */
-const DEFAULTS: HubSettings = { minNodeVersion: "0.1.0", latestNodeVersion: "0.1.0", downloadUrl: "", knownBuilds: [], gameVersion: "", buildUpdatedAt: 0, loginNodeId: "" };
+const DEFAULTS: HubSettings = { minNodeVersion: "0.1.0", latestNodeVersion: "0.1.0", downloadUrl: "", knownBuilds: [], gameVersion: "", buildUpdatedAt: 0, loginNodeId: "", nodeRelease: null, releaseCheckedAt: 0, releaseNote: "" };
 
+/**
+ * The settings the hub goes by: the stored ones, except that a release found on
+ * GitHub is the latest node version, and that whenever there is anything to
+ * download the link is /download, which hands out the newest installer
+ * (src/releases.ts) or else the stored download URL.
+ */
 export function getSettings(db: Db): HubSettings {
+  const s = storedSettings(db);
+  const release = s.nodeRelease;
+  return { ...s, latestNodeVersion: release?.version ?? s.latestNodeVersion, downloadUrl: release || s.downloadUrl ? "/download" : "" };
+}
+
+/** The settings as stored: what the admin page shows and edits. */
+export function storedSettings(db: Db): HubSettings {
   const out = { ...DEFAULTS };
   for (const r of db.prepare("SELECT key, value FROM settings").all() as { key: string; value: string }[]) {
     if (r.key in out) (out as unknown as Record<string, unknown>)[r.key] = JSON.parse(r.value);
@@ -458,7 +505,7 @@ export function setSettings(db: Db, patch: Partial<HubSettings>): HubSettings {
   db.transaction(() => {
     for (const [k, v] of Object.entries(patch)) if (k in DEFAULTS && v !== undefined) up.run(k, JSON.stringify(v));
   })();
-  return getSettings(db);
+  return storedSettings(db);
 }
 
 /**

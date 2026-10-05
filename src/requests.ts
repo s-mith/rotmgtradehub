@@ -181,8 +181,8 @@ const online = (n: { last_seen_at: number | null; frozen: number }, now: number)
  * Items hand-overs under way are bringing to communism account `a` (a give: no communism ref, the account receiving).
  * They are not in what its node published yet; once the meeting closes the node's next publish has them, or not.
  */
-const INCOMING = "(SELECT COALESCE(SUM(json_array_length(rv.giver_gives_json)), 0) FROM rendezvous rv WHERE rv.kind = 'communism' AND rv.state = 'meet' AND rv.communism_ref IS NULL AND rv.taker_node_id = a.node_id AND rv.taker_bot_ign = a.ign)";
-/** A communism account's room: what its node published, less what gives under way bring it. `a` is the communism_accounts row. */
+const INCOMING = "(SELECT COALESCE(SUM(json_array_length(rv.giver_gives_json)), 0) FROM rendezvous rv WHERE rv.kind = 'communism' AND rv.state = 'meet' AND rv.communism_ref IS NULL AND rv.taker_node_id = a.node_id AND rv.taker_bot_ign = a.ign AND rv.seasonal = a.seasonal)";
+/** A communism account's room on its side: what its node published, less what gives under way on that side bring it. `a` is the communism_accounts row. */
 export const EFFECTIVE_FREE = `MAX(a.free - ${INCOMING}, 0)`;
 
 /** Communism account of `nodeId` in that half with the most room, if any has room for `need` items. */
