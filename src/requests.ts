@@ -280,20 +280,12 @@ export function createGuestRequest(db: Db, user: Pick<User, "id">, nodeId: strin
   const byCount = kind === "withdraw" && input.want !== undefined && (input.refs === undefined || (Array.isArray(input.refs) && input.refs.length === 0));
   if (kind === "deposit") {
     if (!isInt(input.count, 1, MAX_TRADE_ITEMS)) return refuse(400, `count must be 1..${MAX_TRADE_ITEMS}`);
-    if (takesByCount(nodeStatus(db, nodeId))) {
-      // Advanced management (docs/relay/ADVANCED.md): a deposit bigger than one character carries on with the next
-      // empty one, on another account if need be, so the node's room counts across its accounts; the node has the last word.
-      const room = roomOnNode(db, nodeId, seasonal);
-      const any = accountWithRoom(db, nodeId, seasonal, 0);
-      if (!any) return refuse(409, `that node has no ${seasonal ? "seasonal" : "non-seasonal"} account in the pool`);
-      if (room < input.count) return refuse(409, `that node's ${seasonal ? "seasonal" : "non-seasonal"} pool has room for ${room} item${room === 1 ? "" : "s"} right now`);
-    } else {
-      const acct = accountWithRoom(db, nodeId, seasonal, input.count);
-      if (!acct) {
-        const best = accountWithRoom(db, nodeId, seasonal, 0);
-        return refuse(409, best ? `that node's ${seasonal ? "seasonal" : "non-seasonal"} pool has room for ${best.free} item${best.free === 1 ? "" : "s"} on one account right now` : `that node has no ${seasonal ? "seasonal" : "non-seasonal"} account in the pool`);
-      }
-    }
+    // A deposit bigger than one character carries on with the account's next character with room, or another
+    // account (the node continues it, under advanced management or not), so the node's room counts across its
+    // accounts; the node has the last word.
+    if (!accountWithRoom(db, nodeId, seasonal, 0)) return refuse(409, `that node has no ${seasonal ? "seasonal" : "non-seasonal"} account in the pool`);
+    const room = roomOnNode(db, nodeId, seasonal);
+    if (room < input.count) return refuse(409, `that node's ${seasonal ? "seasonal" : "non-seasonal"} pool has room for ${room} item${room === 1 ? "" : "s"} right now`);
     count = input.count;
   } else if (byCount) {
     if (!takesByCount(nodeStatus(db, nodeId))) return refuse(409, "that node takes withdraws item by item: pick the items");

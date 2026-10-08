@@ -106,6 +106,9 @@ describe("N of this item", () => {
     expect(page).toContain("data-by-count");
     expect(page).toContain(`<option value="${node.nodeId}~pdef">Potion of Defense · 3 there</option>`);
     expect(page).not.toContain("~Sword\">");
+    // Deposits ask how many items, any number up to 24, as the node's own form does.
+    expect(page).toContain('<input id="deposit-count" type="number" name="count" min="1" max="24" value="8"');
+    expect(page).not.toContain("size-btn");
     const body = new URLSearchParams([["pick", `${node.nodeId}~pdef`], ["qty", "2"], ["server", "USEast"], ["seasonal", "1"]]);
     const res = await app.request("/communism/take-count", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", cookie }, body: body.toString(), redirect: "manual" });
     expect(decodeURIComponent(res.headers.get("location") ?? "")).toMatch(/^\/me\?ok=Request #\d+ queued\. The node picks the copies/);
@@ -114,12 +117,13 @@ describe("N of this item", () => {
   });
 });
 
-describe("deposits into a node with advanced management", () => {
-  it("count the room across its accounts: a deposit carries on with the next empty character", async () => {
+describe("deposits into a node's communism", () => {
+  it("count the room across its accounts, advanced management or not: a deposit carries on with the next character with room", async () => {
     const node = await olive(false);
     const gwen = guest();
     const ask = (count: number) => createGuestRequest(db, gwen, node.nodeId, { kind: "deposit", seasonal: true, server: "USEast", count });
-    expect(ask(10)).toMatchObject({ ok: false, status: 409, error: expect.stringContaining("room for 8 items on one account") });
+    reqOf(ask(10));
+    expect(ask(13)).toMatchObject({ ok: false, status: 409, error: "that node's seasonal pool has room for 12 items right now" });
     await node.beat({ pool: false, communism: true });
     reqOf(ask(10));
     expect(ask(13)).toMatchObject({ ok: false, status: 409, error: "that node's seasonal pool has room for 12 items right now" });

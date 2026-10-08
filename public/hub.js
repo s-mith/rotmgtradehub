@@ -789,10 +789,6 @@
       box.querySelectorAll("[data-pane]").forEach(function (p) { p.hidden = p.getAttribute("data-pane") !== want; });
     });
   });
-  // Deposit size buttons highlight without :has() support.
-  box && box.querySelectorAll(".size-btn input").forEach(function (r) {
-    r.addEventListener("change", function () { box.querySelectorAll(".size-btn").forEach(function (l) { l.classList.toggle("active", l.querySelector("input").checked); }); });
-  });
 
   paintRail();
   paintSliders();

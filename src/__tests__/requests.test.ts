@@ -80,12 +80,12 @@ describe("deposits and withdraws by anyone signed in", () => {
     expect(setIgn(db, gwen.id, "Gw en")).toMatchObject({ ok: false });
     expect(setIgn(db, gwen.id, "Gwen")).toEqual({ ok: true });
     expect(ignOf(db, gwen.id)).toBe("Gwen");
-    // Deposit: count within one account's free slots of that half.
+    // Deposit: count within the node's room in that half, across its accounts (8 + 4 seasonal, 3 non-seasonal).
     expect(ask({ kind: "deposit", seasonal: true, server: "US East", count: 1 })).toMatchObject({ ok: false, status: 400 });
     expect(ask({ kind: "deposit", seasonal: true, server: "USEast", count: 0 })).toMatchObject({ ok: false, status: 400 });
     expect(ask({ kind: "deposit", seasonal: true, server: "USEast", count: 25 })).toMatchObject({ ok: false, status: 400 });
     expect(ask({ kind: "deposit", seasonal: "yes" as unknown as boolean, server: "USEast", count: 1 })).toMatchObject({ ok: false, status: 400 });
-    expect(ask({ kind: "deposit", seasonal: true, server: "USEast", count: 9 })).toMatchObject({ ok: false, status: 409, error: expect.stringContaining("room for 8") });
+    expect(ask({ kind: "deposit", seasonal: true, server: "USEast", count: 13 })).toMatchObject({ ok: false, status: 409, error: "that node's seasonal pool has room for 12 items right now" });
     expect(ask({ kind: "deposit", seasonal: false, server: "USEast", count: 4 })).toMatchObject({ ok: false, status: 409, error: expect.stringContaining("room for 3") });
     const dep = reqOf(ask({ kind: "deposit", seasonal: true, server: "USEast", count: 8 }));
     expect(dep).toMatchObject({ nodeId: owner.nodeId, requester: { userId: gwen.id, displayName: "Gwen" }, owner: false, ign: "Gwen", kind: "deposit", seasonal: true, server: "USEast", count: 8, refs: null, want: null, offerId: null, communism: null, state: "pending", result: null });

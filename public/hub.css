@@ -305,9 +305,6 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 .submit-row { margin-top: 12px; }
 button.submit { width: 100%; padding: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; font-size: 13px; }
 .deposit-size { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.size-btn { border: 1px solid var(--border); border-radius: 5px; padding: 3px 8px; font-size: 12px; color: var(--muted); cursor: pointer; }
-.size-btn input { position: absolute; opacity: 0; width: 0; height: 0; }
-.size-btn:has(input:checked), .size-btn.active { color: var(--accent-hot); border-color: var(--accent); }
 .pool-option-hint { font-size: 12px; color: var(--muted); }
 .node-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .node-list li { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; background: var(--panel-2); font-size: 13px; }

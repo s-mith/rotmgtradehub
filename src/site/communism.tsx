@@ -30,7 +30,7 @@ import { inHalf, parseHalf } from "../market";
 /** The board shows one pool half at a time, like the node's pool page: a character can only trade with bots of its own side. */
 type Half = "seasonal" | "nonseasonal";
 import { NODE_ONLINE_MS, nodesOf, type NodeView } from "../nodes";
-import { MAX_WITHDRAW_ITEMS, MAX_WITHDRAW_NODES, createGuestRequest } from "../requests";
+import { MAX_TRADE_ITEMS, MAX_WITHDRAW_ITEMS, MAX_WITHDRAW_NODES, createGuestRequest } from "../requests";
 import { Badge, Flash, Layout, ServerSelect, halfName } from "./layout";
 import { fields, type Site } from "./context";
 
@@ -336,17 +336,15 @@ const Transact: FC<{ nodes: CommunismNodeWire[]; half: Half; igns: string[]; min
               {open.map((n) => <option value={n.nodeId}>{n.name} · {roomWords(n)}</option>)}
             </select>
             <HalfField form="deposit-form" />
-            <label class="lbl">Trade size</label>
-            <div class="deposit-size" role="group">
-              {[8, 16, 24].map((n, i) => (
-                <label class={`size-btn${i === 0 ? " active" : ""}`}><input type="radio" name="count" value={String(n)} form="deposit-form" checked={i === 0} />{n} slots</label>
-              ))}
-              <span class="pool-option-hint">how many you bring; the account meeting you needs that much room</span>
+            <label class="lbl" for="deposit-count">How many items</label>
+            <div class="deposit-size">
+              <input id="deposit-count" type="number" name="count" min="1" max={String(MAX_TRADE_ITEMS)} value="8" required form="deposit-form" style="width:72px" />
+              <span class="pool-option-hint">up to {MAX_TRADE_ITEMS}: more than one character holds goes on to the next with room</span>
             </div>
             <label class="lbl" for="deposit-server">Server</label>
             <ServerSelect servers={SERVERS} suggested={suggested} required form="deposit-form" id="deposit-server" />
             <CharacterField igns={igns} form="deposit-form" id="deposit-ign" />
-            <p class="hint">Submit and one of that node's accounts in the pool meets {igns.length > 1 ? "your character" : ign} on the chosen server for one trade. Whatever you hand over is free for anyone on the hub to take. The bot to <code>/trade</code> shows on <a href="/me">your page</a> once the node has picked the request up.</p>
+            <p class="hint">Submit and one of that node's accounts in the pool meets {igns.length > 1 ? "your character" : ign} on the chosen server; if you bring more than its character holds, the rest goes to its next character or another account with room. Whatever you hand over is free for anyone on the hub to take. The bot to <code>/trade</code> shows on <a href="/me">your page</a> once the node has picked the request up.</p>
             <div class="submit-row"><button type="submit" class="submit" form="deposit-form">Deposit into the pool</button></div>
           </>
         )}
